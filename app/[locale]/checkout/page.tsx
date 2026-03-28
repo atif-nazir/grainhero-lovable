@@ -66,7 +66,7 @@ export default function CheckoutPage() {
             }))
 
             // Call backend to create Stripe Checkout Session
-            const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'}/api/create-checkout-session`, {
+            const response = await fetch(`/api/create-checkout-session`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
