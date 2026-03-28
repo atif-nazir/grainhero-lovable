@@ -4,6 +4,15 @@
 -- This schema sets up the complete GrainHero backend for Supabase.
 -- Copy and paste this entire block into your Supabase SQL Editor.
 
+-- Drop any partially created tables from previous runs so it's a fresh slate
+DROP TABLE IF EXISTS public.subscriptions CASCADE;
+DROP TABLE IF EXISTS public.grain_batches CASCADE;
+DROP TABLE IF EXISTS public.actuators CASCADE;
+DROP TABLE IF EXISTS public.sensors CASCADE;
+DROP TABLE IF EXISTS public.silos CASCADE;
+DROP TABLE IF EXISTS public.users CASCADE;
+
+
 -- ============================================================================
 -- 1. USERS TABLE (Extended profile linked to auth.users)
 -- ============================================================================
@@ -24,7 +33,7 @@ CREATE TABLE IF NOT EXISTS public.users (
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.silos (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id UUID NOT NULL REFERENCES public.users(tenant_id),
+  tenant_id UUID NOT NULL,
   name TEXT NOT NULL,
   location TEXT,
   capacity_kg NUMERIC(12, 2) NOT NULL,
@@ -41,7 +50,7 @@ CREATE TABLE IF NOT EXISTS public.silos (
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.sensors (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id UUID NOT NULL REFERENCES public.users(tenant_id),
+  tenant_id UUID NOT NULL,
   silo_id UUID NOT NULL REFERENCES public.silos(id) ON DELETE CASCADE,
   sensor_name TEXT NOT NULL,
   sensor_type TEXT NOT NULL, -- 'temperature', 'humidity', 'pressure', etc.
@@ -57,7 +66,7 @@ CREATE TABLE IF NOT EXISTS public.sensors (
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.actuators (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id UUID NOT NULL REFERENCES public.users(tenant_id),
+  tenant_id UUID NOT NULL,
   silo_id UUID NOT NULL REFERENCES public.silos(id) ON DELETE CASCADE,
   actuator_name TEXT NOT NULL,
   actuator_type TEXT NOT NULL, -- 'fan', 'heater', 'pump', etc.
@@ -72,7 +81,7 @@ CREATE TABLE IF NOT EXISTS public.actuators (
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.grain_batches (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id UUID NOT NULL REFERENCES public.users(tenant_id),
+  tenant_id UUID NOT NULL,
   silo_id UUID NOT NULL REFERENCES public.silos(id) ON DELETE CASCADE,
   batch_name TEXT NOT NULL,
   grain_type TEXT NOT NULL,
@@ -93,7 +102,7 @@ CREATE TABLE IF NOT EXISTS public.grain_batches (
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.subscriptions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id UUID NOT NULL REFERENCES public.users(tenant_id),
+  tenant_id UUID NOT NULL,
   stripe_customer_id TEXT UNIQUE,
   stripe_subscription_id TEXT UNIQUE,
   stripe_session_id TEXT,
