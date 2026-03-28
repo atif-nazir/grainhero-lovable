@@ -9,8 +9,8 @@ export async function middleware(request: NextRequest) {
   // First, handle localization (redirects/locale detection)
   const response = await intlMiddleware(request);
 
-  // Then, handle Supabase session updating (if not redirected)
-  return await updateSession(request);
+  // Then, handle Supabase session updating while passing the existing response
+  return await updateSession(request, response);
 }
 
 export const config = {
