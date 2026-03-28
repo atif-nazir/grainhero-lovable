@@ -1,4 +1,30 @@
-const pricingData = [
+export interface PricingPlan {
+  id: string;
+  name: string;
+  priceFrontend: string;
+  description: string;
+  features: string[];
+  iotCharge: number;
+  iotChargeLabel: string;
+  priceMonthly: number;
+  priceId: string;
+  price: number;
+  currency: string;
+  duration: string;
+  interval: string;
+  popular: boolean;
+  limits: {
+    warehouses: number;
+    silos: number;
+    users: number;
+    managers: number;
+    technicians: number;
+    storage: number;
+  };
+  link?: string;
+}
+
+const pricingData: PricingPlan[] = [
   {
     id: "basic",
     name: "Starter",
@@ -15,7 +41,7 @@ const pricingData = [
     iotCharge: 7000,
     iotChargeLabel: "Rs. 7,000 Setup Fee",
     priceMonthly: 1499,
-    priceId: "price_starter_1499", // Update with actual Stripe price ID
+    priceId: "price_starter_1499",
     price: 1499,
     currency: "PKR",
     duration: "/month",
@@ -47,7 +73,7 @@ const pricingData = [
     iotCharge: 7000,
     iotChargeLabel: "Rs. 7,000 Setup Fee",
     priceMonthly: 3899,
-    priceId: "price_professional_3899", // Update with actual Stripe price ID
+    priceId: "price_professional_3899",
     price: 3899,
     currency: "PKR",
     duration: "/month",
@@ -79,7 +105,7 @@ const pricingData = [
     iotCharge: 7000,
     iotChargeLabel: "Rs. 7,000 Setup Fee",
     priceMonthly: 5999,
-    priceId: "price_enterprise_5999", // Update with actual Stripe price ID
+    priceId: "price_enterprise_5999",
     price: 5999,
     currency: "PKR",
     duration: "/month",
@@ -88,11 +114,43 @@ const pricingData = [
     limits: {
       warehouses: 5,
       silos: 15,
-      users: -1, // unlimited
+      users: -1,
       managers: -1,
       technicians: -1,
-      storage: -1, // unlimited
+      storage: -1,
     },
+  },
+  {
+    id: "custom",
+    name: "Custom Solution",
+    priceFrontend: "Contact Us",
+    description: "Tailored solution with specialized features for large enterprises.",
+    features: [
+      "Unlimited Warehouses",
+      "Unlimited Silos",
+      "Custom IoT Sensors",
+      "Dedicated Support",
+      "On-premise Deployment",
+      "Custom AI Models",
+    ],
+    iotCharge: 0,
+    iotChargeLabel: "Custom Setup",
+    priceMonthly: 0,
+    priceId: "custom",
+    price: 0,
+    currency: "PKR",
+    duration: "",
+    interval: "month",
+    popular: false,
+    limits: {
+      warehouses: -1,
+      silos: -1,
+      users: -1,
+      managers: -1,
+      technicians: -1,
+      storage: -1,
+    },
+    link: "mailto:support@grainhero.com?subject=Custom%20Solution%20Inquiry",
   },
 ];
 

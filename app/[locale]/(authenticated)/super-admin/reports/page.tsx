@@ -23,19 +23,59 @@ import {
     SelectValue,
 } from "@/components/ui/select"
 import { DateRange } from "react-day-picker"
-import { addDays, format } from "date-fns"
+import { addDays } from "date-fns"
+import { api } from "@/lib/api"
+
+const reportTypes = [
+    {
+        id: "financial",
+        title: "Financial Summary",
+        description: "Revenue, subscriptions, and transaction history",
+        icon: CreditCard,
+        category: "Finance",
+        format: "PDF/CSV"
+    },
+    {
+        id: "usage",
+        title: "Platform Usage",
+        description: "Active users, silo monitoring, and system load",
+        icon: BarChart,
+        category: "Analytics",
+        format: "PDF"
+    },
+    {
+        id: "tenants",
+        title: "Tenant Performance",
+        description: "Growth metrics and resource allocation by farm",
+        icon: Shield,
+        category: "Management",
+        format: "Excel"
+    },
+    {
+        id: "users",
+        title: "User Activity",
+        description: "Login history, role distributions, and audit logs",
+        icon: Users,
+        category: "Audit",
+        format: "CSV"
+    }
+]
 
 export default function SuperAdminReportsPage() {
     const [generating, setGenerating] = useState<string | null>(null)
-    const [format, setFormat] = useState<string>("pdf") // Added state for format
+    const [reportFormat, setReportFormat] = useState<string>("pdf")
+    const [dateRange, setDateRange] = useState<DateRange | undefined>({
+        from: addDays(new Date(), -30),
+        to: new Date(),
+    })
 
     const handleGenerateReport = async (reportId: string) => {
         try {
             setGenerating(reportId)
             const res = await api.post<{ success: boolean, message: string }>(`/api/super-admin/reports/generate`, {
                 type: reportId,
-                format: format,
-                dateRange: date
+                format: reportFormat,
+                dateRange: dateRange
             })
 
             if (res.ok && res.data?.success) {

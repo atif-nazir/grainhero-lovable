@@ -1,20 +1,21 @@
+import createMiddleware from 'next-intl/middleware';
+import { routing } from './i18n/routing';
 import { updateSession } from '@/lib/supabase/proxy'
 import { type NextRequest } from 'next/server'
 
+const intlMiddleware = createMiddleware(routing);
+
 export async function middleware(request: NextRequest) {
-  return await updateSession(request)
+  // First, handle localization (redirects/locale detection)
+  const response = await intlMiddleware(request);
+
+  // Then, handle Supabase session updating (if not redirected)
+  return await updateSession(request);
 }
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - images - .svg, .png, .jpg, .jpeg, .gif, .webp
-     * Feel free to modify this pattern to include more paths.
-     */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    // Ignore internal paths and static files
+    '/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

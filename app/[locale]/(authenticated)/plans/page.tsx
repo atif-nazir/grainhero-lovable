@@ -8,7 +8,7 @@ import {
   CardFooter,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import pricingData from "../../pricing-data.js";
+import pricingData from "../../pricing-data";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/app/[locale]/providers";
 import { useTranslations } from "next-intl";

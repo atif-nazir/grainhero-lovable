@@ -2,7 +2,7 @@
 import { Wheat as WheatIcon, Menu, X, BarChart3, Brain, Thermometer, TrendingUp, Bell, Check, Cpu } from "lucide-react"
 import { Link } from '@/i18n/navigation'
 import { useState, useEffect } from 'react'
-import pricingData from './pricing-data.js'
+import pricingData from './pricing-data'
 import {
   AnimatedHero,
   AnimatedFeatureCards,

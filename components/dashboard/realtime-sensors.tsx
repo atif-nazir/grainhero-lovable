@@ -59,8 +59,9 @@ export function RealtimeSensors({ siloId }: { siloId: string }) {
         }
 
         typedData.forEach((sensor) => {
-          if (sensor.last_reading_value !== null) {
-            initialData[sensor.sensor_name] = sensor.last_reading_value
+          const val = sensor.last_reading_value
+          if (val !== null) {
+            initialData[sensor.sensor_name] = val
           }
         })
 
@@ -109,7 +110,10 @@ export function RealtimeSensors({ siloId }: { siloId: string }) {
                   newData.shift()
                 }
 
-                lastEntry[updatedSensor.sensor_name] = updatedSensor.last_reading_value
+                const val = updatedSensor.last_reading_value
+                if (val !== null) {
+                  lastEntry[updatedSensor.sensor_name] = val
+                }
 
                 if (prev.length === 0 || 
                     lastEntry.timestamp === newData[newData.length - 1]?.timestamp) {

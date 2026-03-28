@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import pricingData from '../pricing-data.js'
+import pricingData from '../pricing-data'
 import { useTranslations } from 'next-intl'
 import { useRouter } from '@/i18n/navigation'
 import { Wheat as WheatIcon, Check, Cpu, ArrowLeft } from 'lucide-react'

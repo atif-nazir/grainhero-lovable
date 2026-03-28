@@ -202,12 +202,12 @@ export async function updatePassword(newPassword: string) {
   }
 }
 
-function getBaseUrl() {
+async function getBaseUrl() {
   if (typeof window !== 'undefined') {
     return window.location.origin
   }
 
-  const headersList = headers()
+  const headersList = await headers()
   const host = headersList.get('x-forwarded-host') || headersList.get('host')
   const protocol = headersList.get('x-forwarded-proto') || 'http'
 

@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Check, CreditCard, Shield, Clock, Users, Zap, Globe, Cpu, ArrowLeft, ChevronDown, ChevronUp } from "lucide-react"
-import pricingData from '../pricing-data.js'
+import pricingData from '../pricing-data'
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 export default function CheckoutPage() {

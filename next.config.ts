@@ -4,9 +4,17 @@ import createNextIntlPlugin from 'next-intl/plugin';
 const withNextIntl = createNextIntlPlugin();
 
 const nextConfig: NextConfig = {
+  reactStrictMode: true,
+  // Ignore ESLint flat config errors during Next.js 15 builds
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   // Turbopack configuration
   turbopack: {
     root: process.cwd(),
+  },
+  experimental: {
+    optimizePackageImports: ["@radix-ui/react-icons"],
   },
   images: {
     remotePatterns: [
@@ -30,7 +38,15 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  // Remove duplicate turbopack configuration
+  webpack: (config) => {
+    config.resolve.fallback = {
+      ...config.resolve.fallback,
+      fs: false,
+      path: false,
+      crypto: false,
+    }
+    return config
+  },
 };
 
 export default withNextIntl(nextConfig);

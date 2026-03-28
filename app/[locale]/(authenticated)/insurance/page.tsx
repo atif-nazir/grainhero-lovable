@@ -40,6 +40,7 @@ import {
   Calendar,
   Mail,
   Send,
+  Package,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { config } from '@/config'
