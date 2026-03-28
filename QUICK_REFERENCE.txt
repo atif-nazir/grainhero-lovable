@@ -1,0 +1,287 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║              🌾 GRAINHERO SUPABASE + STRIPE INTEGRATION 🚀                 ║
+║                         QUICK REFERENCE GUIDE                              ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+📚 DOCUMENTATION MAP
+────────────────────────────────────────────────────────────────────────────
+
+START HERE →  SETUP_INSTRUCTIONS.md (10 min read)
+              Step-by-step setup guide with all configuration steps
+
+THEN →        DEPLOYMENT_CHECKLIST.md (10 min read)
+              Phase-by-phase deployment guide with verification steps
+
+REFERENCE →   API_REFERENCE.md (15 min read)
+              Complete API documentation for all utilities and functions
+
+DEEP DIVE →   SUPABASE_INTEGRATION_GUIDE.md (15 min read)
+              Architecture, patterns, and implementation details
+
+OVERVIEW →    IMPLEMENTATION_SUMMARY.md (10 min read)
+              Summary of what was built and how it works
+
+FILES →       FILE_STRUCTURE.md (10 min read)
+              Complete file organization and import guide
+
+THIS FILE →   QUICK_REFERENCE.txt (2 min read)
+              Quick reference for common tasks
+
+
+🚀 QUICK START (45 minutes)
+────────────────────────────────────────────────────────────────────────────
+
+Step 1: SET ENVIRONMENT VARIABLES (5 min)
+   → Vercel Project Settings > Vars
+   → Add: NEXT_PUBLIC_SUPABASE_URL
+   → Add: NEXT_PUBLIC_SUPABASE_ANON_KEY
+   → Add: SUPABASE_SERVICE_ROLE_KEY
+   → Add: STRIPE_SECRET_KEY
+   → Add: STRIPE_WEBHOOK_SECRET
+
+Step 2: DEPLOY DATABASE SCHEMA (5 min)
+   → Go to Supabase SQL Editor
+   → Copy: scripts/001_supabase_schema.sql
+   → Paste and Run
+   → Verify 6 tables created
+
+Step 3: ENABLE SUPABASE AUTH (2 min)
+   → Supabase > Authentication > Providers
+   → Enable Email provider
+   → Done!
+
+Step 4: CONFIGURE STRIPE WEBHOOKS (5 min)
+   → Stripe > Developers > Webhooks
+   → Add endpoint: /api/webhooks/stripe
+   → Select events: subscriptions, payments
+   → Copy webhook secret
+
+Step 5: TEST LOCALLY (10 min)
+   → npm install
+   → npm run dev
+   → Visit http://localhost:3000/en/auth/login
+   → Create account and test
+
+Step 6: DEPLOY (5 min)
+   → Push to GitHub
+   → Vercel auto-deploys
+   → Update Stripe webhook URL
+
+
+🔐 SECURITY CHECKLIST
+────────────────────────────────────────────────────────────────────────────
+
+✅ Row Level Security (RLS) implemented
+✅ Server actions for auth (no client-side secrets)
+✅ Webhook signature verification
+✅ Service role key restricted to server
+✅ SSR cookie management
+✅ No hardcoded API keys
+✅ Full TypeScript support
+
+
+📁 KEY FILES AT A GLANCE
+────────────────────────────────────────────────────────────────────────────
+
+AUTHENTICATION:
+  • lib/supabase/server.ts        Server-side auth client
+  • lib/supabase/client.ts        Client-side auth client
+  • lib/actions/auth.ts           Login server action
+  • app/[locale]/auth/login       Updated login page
+  • middleware.ts                 Route protection
+
+REAL-TIME:
+  • components/dashboard/realtime-sensors.tsx    Sensor visualization
+
+PAYMENTS:
+  • app/api/webhooks/stripe/route.ts    Webhook handler
+
+DATABASE:
+  • scripts/001_supabase_schema.sql    Complete PostgreSQL schema
+
+
+🔗 IMPORT PATTERNS
+────────────────────────────────────────────────────────────────────────────
+
+SERVER-SIDE (Server Actions / API Routes):
+  import { createClient, createAdminClient } from '@/lib/supabase/server'
+  const supabase = await createClient()
+  const admin = createAdminClient()
+
+CLIENT-SIDE (Client Components):
+  import { createClient } from '@/lib/supabase/client'
+  const supabase = createClient()
+
+AUTH ACTION:
+  import { loginWithEmail } from '@/lib/actions/auth'
+  const result = await loginWithEmail(email, password, locale)
+
+COMPONENTS:
+  import { RealtimeSensors } from '@/components/dashboard/realtime-sensors'
+  <RealtimeSensors siloId={siloId} />
+
+
+📊 DATABASE TABLES
+────────────────────────────────────────────────────────────────────────────
+
+users               → User profiles linked to Supabase Auth
+silos               → Grain storage containers
+sensors             → IoT sensor registry with real-time support
+actuators           → Environmental control devices
+grain_batches       → Inventory tracking with traceability
+subscriptions       → Stripe payment tracking
+
+All tables have Row Level Security (RLS) for tenant isolation.
+
+
+⚙️ ENVIRONMENT VARIABLES NEEDED
+────────────────────────────────────────────────────────────────────────────
+
+NEXT_PUBLIC_SUPABASE_URL           (Public - client-side)
+NEXT_PUBLIC_SUPABASE_ANON_KEY      (Public - client-side)
+SUPABASE_SERVICE_ROLE_KEY          (Secret - server-side only)
+STRIPE_SECRET_KEY                  (Secret - server-side only)
+STRIPE_WEBHOOK_SECRET              (Secret - webhook verification)
+
+
+🆘 TROUBLESHOOTING
+────────────────────────────────────────────────────────────────────────────
+
+"Missing environment variables"
+→ Check Vercel Settings > Vars are set correctly
+
+"Can't log in"
+→ Make sure you ran SQL schema in Supabase
+→ Check Supabase Auth is enabled
+
+"Webhook fails"
+→ Verify webhook secret matches Stripe
+→ Check endpoint URL is correct
+
+"Real-time not updating"
+→ Check RLS policies allow reads
+→ Verify sensors table has data
+
+"404 on protected routes"
+→ Check middleware.ts protected routes list
+→ Make sure user is logged in
+
+
+🎯 WHAT'S INCLUDED
+────────────────────────────────────────────────────────────────────────────
+
+AUTHENTICATION:
+  ✅ Email/password signup and login
+  ✅ Session management with SSR support
+  ✅ Protected routes with middleware
+  ✅ Automatic user profile creation
+
+REAL-TIME:
+  ✅ Sensor data visualization with Recharts
+  ✅ Live updates without polling
+  ✅ Supabase subscriptions
+  ✅ Automatic cleanup on unmount
+
+PAYMENTS:
+  ✅ Stripe webhook integration
+  ✅ Subscription management
+  ✅ Payment event handling
+  ✅ Webhook signature verification
+
+DATABASE:
+  ✅ Complete PostgreSQL schema
+  ✅ 6 core tables with relationships
+  ✅ Row Level Security policies
+  ✅ Automatic timestamps and triggers
+
+UI/UX:
+  ✅ Zero breaking changes to UI
+  ✅ Login page updated but visually identical
+  ✅ All styling completely preserved
+  ✅ i18n routing maintained
+
+
+📈 WHAT CHANGED
+────────────────────────────────────────────────────────────────────────────
+
+CHANGED:
+  ✅ Auth: Firebase → Supabase
+  ✅ Login page: Updated for Supabase
+  ✅ Middleware: Added session verification
+  ✅ Components: Can now use real-time data
+  ✅ Dependencies: Added Supabase & Stripe SDKs
+
+UNCHANGED:
+  ❌ UI/Styling: Completely preserved
+  ❌ Layout: No changes to responsive design
+  ❌ Routing: i18n locale routing intact
+  ❌ Components: No breaking changes
+  ❌ Pages: Existing pages work same
+
+
+🚀 DEPLOYMENT FLOW
+────────────────────────────────────────────────────────────────────────────
+
+1. Set env vars in Vercel (5 min)
+2. Run SQL schema in Supabase (5 min)
+3. Enable Email auth (2 min)
+4. Configure Stripe webhooks (5 min)
+5. Test locally (10 min)
+6. Deploy to production (5 min)
+   └─ Update Stripe webhook URL to production domain
+
+TOTAL TIME: 45-60 minutes
+
+
+📞 QUICK LINKS
+────────────────────────────────────────────────────────────────────────────
+
+Getting Keys:
+  Supabase: https://supabase.com (Settings > API)
+  Stripe: https://dashboard.stripe.com (Developers > API Keys)
+  Vercel: https://vercel.com/dashboard (Settings > Vars)
+
+Documentation:
+  Supabase: https://supabase.com/docs
+  Stripe: https://stripe.com/docs
+  Next.js: https://nextjs.org/docs
+  Vercel: https://vercel.com/docs
+
+
+✨ SUCCESS CRITERIA
+────────────────────────────────────────────────────────────────────────────
+
+Minimum Viable:
+  ✅ Users can sign up and log in
+  ✅ Protected routes are protected
+  ✅ Database schema exists
+  ✅ Environment variables set
+
+Full Integration:
+  ✅ Real-time sensor data works
+  ✅ Stripe webhooks process
+  ✅ All env variables configured
+  ✅ Production deployment successful
+
+Production Ready:
+  ✅ All tests passing
+  ✅ No security warnings
+  ✅ Performance acceptable
+  ✅ Error monitoring in place
+
+
+🎉 YOU'RE READY!
+────────────────────────────────────────────────────────────────────────────
+
+Your GrainHero platform is fully integrated with:
+  • Supabase for authentication and data
+  • Real-time IoT sensor capabilities
+  • Stripe payment processing
+  • Production-ready security
+  • Comprehensive documentation
+
+NEXT: Open SETUP_INSTRUCTIONS.md and follow along!
+
+═══════════════════════════════════════════════════════════════════════════════
+Good luck with your deployment! 🌾✨
+═══════════════════════════════════════════════════════════════════════════════
