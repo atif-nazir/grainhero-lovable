@@ -71,24 +71,25 @@ export default function LoginPage() {
     }
 
     try {
-      const result = await loginWithEmail(normalizedEmail, password, locale)
+      const { createClient } = await import("@/lib/supabase/client")
+      const supabase = createClient()
       
-      if (result.error) {
-        setMessage(result.error)
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: normalizedEmail,
+        password: password,
+      })
+      
+      if (error) {
+        setMessage(error.message)
       } else {
         setMessage("Login successful! Redirecting...")
-        // Clear any pending signup email
-        if (typeof window !== 'undefined') {
-          localStorage.removeItem('pendingSignupEmail')
-        }
-        
         const redirectTo = searchParams?.get('redirect_to') || '/dashboard'
         setTimeout(() => {
           router.push(redirectTo)
         }, 1000)
       }
     } catch (err) {
-      setMessage("Network error. Please check your connection and try again.")
+      setMessage("An unexpected error occurred. Please try again.")
       console.error(err)
     }
     setIsLoading(false)

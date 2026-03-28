@@ -345,7 +345,6 @@ export default function GrainBatchesPage() {
   const handleDispatchBatch = async () => {
     if (!selectedBatch) return
     try {
-      // Module 8: Use new dispatch endpoint with buyer_id and sell_price_per_kg
       if (!dispatchData.buyer_id && !dispatchData.buyer_name) {
         toast.error('Please select a buyer or enter buyer details')
         return
@@ -355,121 +354,71 @@ export default function GrainBatchesPage() {
         return
       }
 
-      const dataToSend: any = {
-        buyer_id: dispatchData.buyer_id || undefined,
-        sell_price_per_kg: Number(dispatchData.sell_price_per_kg),
-        dispatched_quantity_kg: dispatchData.quantity_dispatched ? Number(dispatchData.quantity_dispatched) : undefined,
-        dispatch_details: {
-          vehicle_number: dispatchData.vehicle_number || undefined,
-          driver_name: dispatchData.driver_name || undefined,
-          driver_contact: dispatchData.driver_contact || undefined,
-          destination: dispatchData.destination || undefined
-        }
+      const supabaseClient = supabase;
+      let buyerId = dispatchData.buyer_id;
+
+      // If buyer is new, create them first
+      if (!buyerId && dispatchData.buyer_name) {
+        const { data: newBuyer, error: bErr } = await supabaseClient
+          .from('buyers')
+          .insert({
+            name: dispatchData.buyer_name,
+            email: dispatchData.buyer_email,
+            contact_info: dispatchData.buyer_contact
+          })
+          .select()
+          .single();
+        
+        if (bErr) throw bErr;
+        buyerId = newBuyer.id;
       }
 
-      // If no buyer_id, use dispatch-simple endpoint
-      let res
-      if (!dispatchData.buyer_id) {
-        res = await api.post(`/api/grain-batches/${selectedBatch._id}/dispatch-simple`, {
-          buyer_name: dispatchData.buyer_name,
-          buyer_email: dispatchData.buyer_email,
-          buyer_contact: dispatchData.buyer_contact,
-          quantity_dispatched: dispatchData.quantity_dispatched,
-          sell_price_per_kg: dispatchData.sell_price_per_kg,
-          dispatch_date: dispatchData.dispatch_date,
-          notes: dispatchData.notes
+      const q = Number(dispatchData.quantity_dispatched);
+      const { error: dErr } = await supabaseClient
+        .from('grain_batches')
+        .update({
+          status: 'dispatched',
+          buyer_id: buyerId,
+          price_per_kg: Number(dispatchData.sell_price_per_kg),
+          dispatched_quantity_kg: q,
+          updated_at: new Date().toISOString()
         })
-      } else {
-        res = await api.post(`/api/grain-batches/${selectedBatch._id}/dispatch`, dataToSend)
-      }
-      if (res.ok) {
-        toast.success('Grain batch dispatched successfully')
-        setIsDispatchDialogOpen(false)
-        // Trigger buyers page refresh if it's open (via window event)
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('buyers-refresh'))
-        }
-        setDispatchData({
-          buyer_id: '',
-          buyer_name: '',
-          buyer_email: '',
-          buyer_contact: '',
-          quantity_dispatched: '',
-          dispatch_date: '',
-          sell_price_per_kg: '',
-          vehicle_number: '',
-          driver_name: '',
-          driver_contact: '',
-          destination: '',
-          notes: ''
-        })
-        await fetchBatches()
-      } else {
-        toast.error('Failed to dispatch grain batch')
-      }
-    } catch (error) {
+        .eq('id', selectedBatch._id);
+
+      if (dErr) throw dErr;
+
+      toast.success('Grain batch dispatched successfully')
+      setIsDispatchDialogOpen(false)
+      await fetchBatches()
+    } catch (error: any) {
       console.error('Error dispatching batch:', error)
-      toast.error('Failed to dispatch grain batch')
+      toast.error(`Failed to dispatch: ${error.message}`)
     }
   }
 
   const handleLogSpoilage = async () => {
     if (!selectedBatch) return
     try {
-      const res = await api.post(`/api/logging/batches/${selectedBatch._id}/spoilage-events`, {
-        ...spoilageData,
-        estimated_loss_kg: spoilageData.estimated_loss_kg ? Number(spoilageData.estimated_loss_kg) : 0,
-        environmental_conditions: {
-          temperature: spoilageData.temperature ? Number(spoilageData.temperature) : undefined,
-          humidity: spoilageData.humidity ? Number(spoilageData.humidity) : undefined
-        }
-      })
+      const { error } = await supabase
+        .from('grain_alerts')
+        .insert({
+          batch_id: selectedBatch._id,
+          silo_id: selectedBatch.silo_id?._id,
+          type: spoilageData.type,
+          priority: spoilageData.severity === 'high' ? 'critical' : spoilageData.severity,
+          title: `Spoilage reported: ${spoilageData.type}`,
+          description: spoilageData.description,
+          status: 'active'
+        });
 
-      if (res.ok && res.data) {
-        toast.success('Spoilage event logged successfully')
-        const eventId = (res.data as any).event.event_id
+      if (error) throw error;
 
-        // Upload photos if any
-        if (spoilagePhotos.length > 0) {
-          setIsUploadingPhoto(true)
-          for (const photo of spoilagePhotos) {
-            const formData = new FormData()
-            formData.append('photos', photo)
-
-            const token = localStorage.getItem('token')
-            const uploadRes = await fetch(`${config.backendUrl}/api/logging/batches/${selectedBatch._id}/spoilage-events/${eventId}/photos`, {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${token}`
-              },
-              body: formData
-            })
-
-            if (!uploadRes.ok) {
-              toast.error('Failed to upload some photos')
-            }
-          }
-          setIsUploadingPhoto(false)
-        }
-
-        setIsSpoilageDialogOpen(false)
-        setSpoilageData({
-          type: 'pests',
-          severity: 'low',
-          description: '',
-          estimated_loss_kg: '',
-          temperature: '',
-          humidity: '',
-          action_taken: ''
-        })
-        setSpoilagePhotos([])
-        await fetchBatches()
-      } else {
-        toast.error('Failed to log spoilage event')
-      }
-    } catch (error) {
+      toast.success('Spoilage event logged successfully')
+      setIsSpoilageDialogOpen(false)
+      await fetchBatches()
+    } catch (error: any) {
       console.error('Error logging spoilage:', error)
-      toast.error('Failed to log spoilage event')
+      toast.error(`Failed to log: ${error.message}`)
     }
   }
 

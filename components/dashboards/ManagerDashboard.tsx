@@ -20,7 +20,7 @@ import {
   Loader2
 } from "lucide-react"
 import { useEffect, useState } from "react"
-import { api } from "@/lib/api"
+import { createClient } from "@/lib/supabase/client"
 import { useAuth } from "@/app/[locale]/providers"
 
 interface ManagerStats {
@@ -92,79 +92,82 @@ export function ManagerDashboard() {
       try {
         setIsLoading(true)
         setError(null)
+        const supabase = createClient()
 
-        // Fetch grain batches - get more for accurate stats
-        const batchesRes = await api.get<{ batches: Batch[] }>("/grain-batches?limit=50")
+        // Fetch grain batches (direct from Supabase)
+        const { data: batches, error: batchError } = await supabase
+          .from('grain_batches')
+          .select('*, silo:silos(name)')
+          .order('created_at', { ascending: false })
+          .limit(50)
 
-        if (batchesRes.ok && batchesRes.data) {
-          const batches = batchesRes.data.batches || []
-          setRecentBatches(batches.slice(0, 10)) // Show only recent 10
+        if (batchError) throw batchError
 
-          // Calculate stats from batches
-          const activeBatches = batches.filter(b =>
-            b.status !== "dispatched" && b.status !== "completed"
+        if (batches) {
+          const mappedBatches = batches.map(b => ({
+            _id: b.id,
+            batch_id: b.batch_code || b.id,
+            grain_type: b.grain_type,
+            quantity_kg: b.quantity_kg,
+            status: b.status,
+            risk_score: b.risk_score || 0,
+            intake_date: b.created_at,
+            quality_score: b.quality_score,
+            silo_id: b.silo?.name || "Storage",
+            purchase_price_per_kg: b.price_per_kg || 0
+          }))
+          
+          setRecentBatches(mappedBatches.slice(0, 10))
+
+          // Calculate stats
+          const activeBatches = batches.filter(b => 
+            !['dispatched', 'completed'].includes(b.status)
           ).length
 
           const today = new Date()
           today.setHours(0, 0, 0, 0)
           const dispatchedToday = batches.filter(b => {
-            if (b.status !== "dispatched") return false
-            const dateStr = b.intake_date || b.created_at
-            if (!dateStr) return false
-            const batchDate = new Date(dateStr)
-            return batchDate >= today
+            if (b.status !== 'dispatched') return false
+            return new Date(b.updated_at) >= today
           }).length
 
-          // Calculate revenue from dispatched batches
-          const dispatchedBatches = batches.filter(b => b.status === "dispatched")
-          const totalRevenue = dispatchedBatches.reduce((sum, b) => {
-            const pricePerKg = b.purchase_price_per_kg || 0
-            return sum + (pricePerKg * b.quantity_kg)
-          }, 0)
+          const totalRevenue = batches
+            .filter(b => b.status === 'dispatched')
+            .reduce((sum, b) => sum + ((b.price_per_kg || 0) * b.quantity_kg), 0)
 
           const avgQuality = batches.length > 0
             ? Math.round(batches.reduce((sum, b) => sum + (b.quality_score || 90), 0) / batches.length)
             : 0
 
-          setManagerStats(prev => ({
-            ...prev,
+          setManagerStats({
             totalBatches: batches.length,
             activeBatches,
             dispatchedToday,
             totalRevenue,
             qualityScore: avgQuality,
-            riskAlerts: batches.filter(b => b.risk_score > 70).length
-          }))
-        } else {
-          setError(batchesRes.error || "Failed to load batches")
+            riskAlerts: batches.filter(b => (b.risk_score || 0) > 70).length
+          })
         }
 
-        // Fetch real alerts
-        try {
-          const alertsRes = await api.get<{ alerts: RawAlert[] }>("/api/alerts?limit=10&status=active")
-          if (alertsRes.ok && alertsRes.data) {
-            const alertsData = alertsRes.data.alerts || []
-            const formattedAlerts: DashboardAlert[] = alertsData.slice(0, 5).map((alert) => {
-              const severity = (alert.severity || "low").toLowerCase() as AlertSeverity
-              return {
-                id: alert._id || alert.id || "",
-                type: severity,
-                message: alert.message || alert.description || "Alert",
-                time: formatRelativeTime(alert.created_at || alert.timestamp || ""),
-                location: alert.location || alert.silo_id?.name || "System",
-                batch: alert.batch_id || alert.batch || "N/A"
-              }
-            })
-            setAlerts(formattedAlerts)
-            setManagerStats(prev => ({
-              ...prev,
-              riskAlerts: alertsData.filter(a => a.severity === "high").length
-            }))
-          }
-        } catch (err) {
-          console.error("Error fetching alerts:", err)
-          // Don't fail the whole dashboard if alerts fail
+        // Fetch Alerts
+        const { data: alertsData } = await supabase
+          .from('grain_alerts')
+          .select('*, silo:silos(name)')
+          .eq('status', 'active')
+          .order('created_at', { ascending: false })
+          .limit(5)
+
+        if (alertsData) {
+          setAlerts(alertsData.map(a => ({
+            id: a.id,
+            type: (a.priority === 'critical' || a.priority === 'high') ? 'high' : a.priority === 'medium' ? 'medium' : 'low',
+            message: a.title,
+            time: formatRelativeTime(a.created_at),
+            location: a.silo?.name || "System",
+            batch: a.batch_id || "N/A"
+          })))
         }
+
       } catch (err) {
         console.error('Error fetching manager data:', err)
         setError('Failed to load manager dashboard data')

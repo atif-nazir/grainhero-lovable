@@ -43,19 +43,22 @@ export default function ForgetPasswordPage() {
     setIsLoading(true)
     setMessage(null)
     try {
-      const res = await fetch(`${config.backendUrl}/auth/forget-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim().toLowerCase() }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        setMessage(data?.error || "Request failed. Please try again.")
+      const { createClient } = await import("@/lib/supabase/client")
+      const supabase = createClient()
+      const { error } = await supabase.auth.resetPasswordForEmail(
+        email.trim().toLowerCase(),
+        {
+          redirectTo: `${window.location.origin}/auth/reset-password`,
+        }
+      )
+      
+      if (error) {
+        setMessage(error.message)
       } else {
-        setMessage(data?.message || "If this email exists, a reset link has been sent.")
+        setMessage("If this email exists, a reset link has been sent.")
       }
     } catch {
-      setMessage("Network error. Please try again.")
+      setMessage("An unexpected error occurred. Please try again.")
     }
     setIsLoading(false)
   }

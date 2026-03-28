@@ -70,8 +70,7 @@ export default function SensorsPage() {
     lidState: string
   }>>([])
   const [siloId, setSiloId] = useState<string>('')
-  const backendUrl = (typeof window !== 'undefined' ? (window as typeof window & Record<string, unknown>).__BACKEND_URL : undefined) || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'
-  const socketRef = useRef<Socket | null>(null)
+  const socketRef = useRef<any>(null)
   const [realtimeConnected, setRealtimeConnected] = useState(false)
   const [showDiagnostics, setShowDiagnostics] = useState(false)
   const [diagnostics, setDiagnostics] = useState<Array<{ error: string; solution: string }>>([])

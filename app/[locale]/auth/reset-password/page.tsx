@@ -79,20 +79,20 @@ export default function ResetPasswordPage() {
     setMessage(null)
 
     try {
-      const res = await fetch(`${config.backendUrl}/auth/reset-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, newPassword, confirmPassword }),
+      const { createClient } = await import("@/lib/supabase/client")
+      const supabase = createClient()
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
       })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        setMessage(data?.error || "Request failed. Please try again.")
+      
+      if (error) {
+        setMessage(error.message)
       } else {
-        setMessage(data?.message || "Password reset successful! You can now log in.")
+        setMessage("Password updated successfully! Redirecting to login...")
         setTimeout(() => router.push("/auth/login"), 2000)
       }
     } catch {
-      setMessage("Network error. Please try again.")
+      setMessage("An unexpected error occurred. Please try again.")
     }
     setIsLoading(false)
   }

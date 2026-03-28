@@ -19,19 +19,17 @@ export function AuthGuard({ children, requiredRoles, fallbackRoute = "/not-allow
   useEffect(() => {
     if (isLoading) return
 
-    const validation = validateUserSession(user, pathname)
-    
-    if (!validation.isValid) {
-      router.push(validation.redirectTo || fallbackRoute)
+    if (!user) {
+      router.push("/auth/login")
       return
     }
 
     // Additional role-based checks if requiredRoles is provided
-    if (requiredRoles && user && !requiredRoles.includes(user.role)) {
+    if (requiredRoles && !requiredRoles.includes(user.role)) {
       router.push(fallbackRoute)
       return
     }
-  }, [user, isLoading, pathname, router, requiredRoles, fallbackRoute])
+  }, [user, isLoading, router, requiredRoles, fallbackRoute])
 
   // Show loading state while checking authentication
   if (isLoading) {

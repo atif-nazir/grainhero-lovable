@@ -59,7 +59,7 @@ export default function ProfilePage() {
   const [showNotifications, setShowNotifications] = useState(false)
   // Collapsible state for Basic Information
   const [showBasicInfo, setShowBasicInfo] = useState(false)
-  const { user: currentUser, refreshUser } = useAuth()
+  const { user: currentUser } = useAuth()
   const [profile, setProfile] = useState<UserProfile | null>(null)
   // Local avatar state for instant UI update
   const [avatar, setAvatar] = useState<string | undefined>(undefined)
@@ -157,7 +157,7 @@ export default function ProfilePage() {
           language: profileData.language,
           avatar: avatar !== undefined ? avatar : prev.avatar
         } : prev)
-        await refreshUser()
+        // await refreshUser()
         fetchProfile()
       } else {
         toast.error(response.error || "Failed to update profile")
@@ -236,7 +236,7 @@ export default function ProfilePage() {
         toast.success("Avatar updated successfully")
         setAvatar(data.avatar) // Update local avatar for instant UI
         setProfile(prev => prev ? { ...prev, avatar: data.avatar } : prev)
-        await refreshUser()
+        // await refreshUser()
         fetchProfile()
       } else {
         const errorData = await response.json()

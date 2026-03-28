@@ -42,8 +42,7 @@ import {
   Send,
   Package,
 } from 'lucide-react'
-import { api } from '@/lib/api'
-import { config } from '@/config'
+import { supabase } from '@/lib/supabase'
 
 // ── Interfaces ──────────────────────────────────────────
 interface InsurancePolicy {
@@ -178,15 +177,36 @@ export default function InsurancePage() {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [policiesRes, claimsRes, batchesRes] = await Promise.all([
-        api.get<{ policies: InsurancePolicy[] }>('/api/insurance/policies?limit=50'),
-        api.get<{ claims: InsuranceClaim[] }>('/api/insurance/claims?limit=50'),
-        api.get<{ batches: GrainBatch[] }>('/api/grain-batches?limit=100'),
-      ])
-      if (policiesRes.ok && policiesRes.data) setPolicies(policiesRes.data.policies as unknown as InsurancePolicy[])
-      if (claimsRes.ok && claimsRes.data) setClaims(claimsRes.data.claims as unknown as InsuranceClaim[])
-      if (batchesRes.ok && batchesRes.data) setBatches((batchesRes.data.batches || []) as unknown as GrainBatch[])
-    } catch {
+      const { data: policiesData } = await supabase.from('insurance_policies').select('*')
+      const { data: claimsData } = await supabase.from('insurance_claims').select('*')
+      const { data: batchesData } = await supabase.from('grain_batches').select('*, grain_alerts(*)')
+
+      if (policiesData) setPolicies(policiesData as unknown as InsurancePolicy[])
+      if (claimsData) setClaims(claimsData as unknown as InsuranceClaim[])
+      if (batchesData) {
+        const mappedBatches = batchesData.map(b => ({
+          _id: b.id,
+          batch_id: b.batch_id,
+          grain_type: b.grain_type,
+          quantity_kg: b.quantity_kg,
+          status: b.status,
+          spoilage_events: b.grain_alerts
+            ?.filter((a: any) => a.alert_type === 'spoilage')
+            .map((a: any) => ({
+              event_id: a.id,
+              event_type: a.alert_type,
+              severity: a.severity,
+              description: a.message,
+              estimated_loss_kg: a.metadata?.estimated_loss_kg || 0,
+              estimated_value_loss: a.metadata?.estimated_value_loss || 0,
+              detected_date: a.created_at,
+              photos: a.metadata?.photos || []
+            }))
+        }))
+        setBatches(mappedBatches as unknown as GrainBatch[])
+      }
+    } catch (error) {
+      console.error('Insurance data load error:', error)
       toast.error('Failed to load insurance data')
     } finally {
       setLoading(false)
@@ -212,22 +232,43 @@ export default function InsurancePage() {
   }
 
   const submitClaimWithPhotos = async () => {
-    if (claimPhotos.length === 0) { toast.error('Please upload at least one damage photo'); return }
+    if (claimPhotos.length === 0) { toast.error('Please upload at least one damage evidence'); return }
     setUploadingPhotos(true)
     try {
       const photoUrls: string[] = []
-      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
       for (const photo of claimPhotos) {
-        const fd = new FormData(); fd.append('photo', photo); fd.append('claim_type', claimForm.claim_type)
-        const uploadRes = await fetch(`${config.backendUrl}/api/insurance/upload-photo`, { method: 'POST', headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: fd })
-        if (uploadRes.ok) { const data = await uploadRes.json(); photoUrls.push(data.url) }
+        const fileExt = photo.name.split('.').pop()
+        const fileName = `${Math.random()}.${fileExt}`
+        const filePath = `insurance-claims/${fileName}`
+        const { error: uploadError } = await supabase.storage.from('documents').upload(filePath, photo)
+        if (uploadError) throw uploadError
+        const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(filePath)
+        photoUrls.push(publicUrl)
       }
-      const body = { ...claimForm, amount_claimed: Number(claimForm.amount_claimed), batch_affected: { batch_id: claimForm.batch_id, quantity_affected: Number(claimForm.quantity_affected) }, photos: photoUrls }
-      const res = await api.post('/api/insurance/claims', body)
-      if (res.ok) { toast.success('Claim filed with photos'); setShowClaimModal(false); setClaimPhotos([]); loadData() }
-      else toast.error(res.error || 'Failed to file claim')
-    } catch (e: unknown) { toast.error((e as Error).message) }
-    finally { setUploadingPhotos(false) }
+
+      const { error: claimError } = await supabase.from('insurance_claims').insert({
+        policy_id: claimForm.policy_id,
+        claim_type: claimForm.claim_type,
+        description: claimForm.description,
+        amount_claimed: Number(claimForm.amount_claimed),
+        incident_date: claimForm.incident_date,
+        batch_id: claimForm.batch_id,
+        quantity_affected: Number(claimForm.quantity_affected),
+        photos: photoUrls,
+        status: 'pending',
+        claim_number: `CLM-${Math.floor(100000 + Math.random() * 900000)}`
+      })
+
+      if (claimError) throw claimError
+      
+      toast.success('Claim filed successfully')
+      setShowClaimModal(false)
+      loadData()
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to file claim')
+    } finally {
+      setUploadingPhotos(false)
+    }
   }
 
   // ── Spoilage Event Handlers ───────────────────────────
@@ -235,56 +276,50 @@ export default function InsurancePage() {
     if (!spoilageForm.batch_id) { toast.error('Select a batch'); return }
     setSpoilageSaving(true)
     try {
-      const res = await api.post(`/api/logging/batches/${spoilageForm.batch_id}/spoilage-events`, {
-        event_type: spoilageForm.event_type, severity: spoilageForm.severity,
-        description: spoilageForm.description, estimated_loss_kg: Number(spoilageForm.estimated_loss_kg),
-        estimated_value_loss: Number(spoilageForm.estimated_value_loss),
-      })
-      if (res.ok) {
-        toast.success('Spoilage event logged')
-        // Upload photos if any
-        if (spoilagePhotos.length > 0 && (res.data as any)?.event?.event_id) {
-          const eventId = (res.data as any).event.event_id
-          const fd = new FormData()
-          spoilagePhotos.forEach(p => fd.append('photos', p))
-          const token = localStorage.getItem('token')
-          await fetch(`${config.backendUrl}/api/logging/batches/${spoilageForm.batch_id}/spoilage-events/${eventId}/photos`, {
-            method: 'POST', headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: fd,
-          })
+      const photoUrls: string[] = []
+      for (const photo of spoilagePhotos) {
+        const fileExt = photo.name.split('.').pop()
+        const fileName = `${Math.random()}.${fileExt}`
+        const filePath = `spoilage-events/${fileName}`
+        const { error: uploadError } = await supabase.storage.from('documents').upload(filePath, photo)
+        if (uploadError) throw uploadError
+        const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(filePath)
+        photoUrls.push(publicUrl)
+      }
+
+      const { error: eventError } = await supabase.from('grain_alerts').insert({
+        batch_id: spoilageForm.batch_id,
+        alert_type: 'spoilage',
+        severity: spoilageForm.severity,
+        message: spoilageForm.description,
+        metadata: {
+          event_type: spoilageForm.event_type,
+          estimated_loss_kg: Number(spoilageForm.estimated_loss_kg),
+          estimated_value_loss: Number(spoilageForm.estimated_value_loss),
+          photos: photoUrls
         }
-        setShowSpoilageModal(false); setSpoilagePhotos([]); loadData()
-      } else toast.error((res as any).error || 'Failed to log spoilage event')
-    } catch (e: unknown) { toast.error((e as Error).message) }
-    finally { setSpoilageSaving(false) }
+      })
+
+      if (eventError) throw eventError
+
+      toast.success('Spoilage event logged')
+      setShowSpoilageModal(false)
+      loadData()
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to log spoilage event')
+    } finally {
+      setSpoilageSaving(false)
+    }
   }
 
   // ── Insurance Export ──────────────────────────────────
   const downloadInsuranceExport = async (batchId: string, format: string, claimNumber: string) => {
-    try {
-      const token = localStorage.getItem('token')
-      const res = await fetch(`${config.backendUrl}/api/grain-batches/${batchId}/export-insurance?format=${format}`, {
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      })
-      if (res.ok) {
-        const blob = await res.blob(); const url = window.URL.createObjectURL(blob)
-        const a = document.createElement('a'); a.href = url; a.download = `claim-${claimNumber}-${format}.json`; a.click()
-        toast.success(`${format.toUpperCase()} export downloaded`)
-      } else toast.error('Failed to export')
-    } catch { toast.error('Export failed') }
+    toast.error('Export functionality will be available via Supabase Edge Functions soon.')
   }
 
   // ── Batch Report Download ─────────────────────────────
   const downloadBatchReport = async (batchId: string, batchRef: string) => {
-    try {
-      const token = localStorage.getItem('token')
-      const res = await fetch(`${config.backendUrl}/api/logging/batches/${batchId}/report`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!res.ok) throw new Error('Failed')
-      const blob = await res.blob(); const url = URL.createObjectURL(blob)
-      const a = document.createElement('a'); a.href = url; a.download = `batch-report-${batchRef}.pdf`; a.click()
-      URL.revokeObjectURL(url); toast.success('Report downloaded!')
-    } catch { toast.error('Failed to download report') }
+    toast.error('Report generation is moving to Supabase Edge Functions.')
   }
 
   // ── Request Insurance from Super Admin ────────────────
@@ -292,19 +327,23 @@ export default function InsurancePage() {
     if (!requestForm.message.trim()) { toast.error('Please write a short message'); return }
     setRequestSending(true)
     try {
-      const res = await api.post('/api/insurance/request-coverage', {
-        preferred_provider: requestForm.preferred_provider,
-        coverage_type: requestForm.coverage_type,
-        message: requestForm.message,
+      const { error } = await supabase.from('grain_alerts').insert({
+        alert_type: 'insurance_request',
+        severity: 'low',
+        message: `Insurance request for ${requestForm.preferred_provider} - ${requestForm.coverage_type}: ${requestForm.message}`,
+        metadata: {
+          preferred_provider: requestForm.preferred_provider,
+          coverage_type: requestForm.coverage_type
+        }
       })
-      if (res.ok) {
-        toast.success('Request sent to administrator!')
-        setRequestForm({ preferred_provider: 'EFU', coverage_type: 'Comprehensive', message: '' })
-      } else {
-        toast.error((res as any).error || 'Failed to send request')
-      }
-    } catch (e: unknown) { toast.error((e as Error).message || 'Failed to send') }
-    finally { setRequestSending(false) }
+      if (error) throw error
+      toast.success('Request sent to administrator!')
+      setRequestForm({ preferred_provider: 'EFU', coverage_type: 'Comprehensive', message: '' })
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to send request')
+    } finally {
+      setRequestSending(false)
+    }
   }
 
   // ── Computed ──────────────────────────────────────────
