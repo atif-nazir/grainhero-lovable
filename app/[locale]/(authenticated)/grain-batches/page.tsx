@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Plus, Search, Package, QrCode, AlertTriangle, Edit, Trash2, Eye, MoreVertical, Truck, Download, Camera } from 'lucide-react'
 import { api } from '@/lib/api'
+import { supabase } from '@/lib/supabase'
 import { config } from '@/config'
 import { toast } from 'sonner'
 import QRCodeDisplay from '@/components/QRCodeDisplay'
@@ -152,31 +153,49 @@ export default function GrainBatchesPage() {
 
   const fetchBatches = async () => {
     try {
-      console.log('Fetching batches...')
-      const res = await api.get<{ batches: GrainBatch[] }>(`/api/grain-batches?limit=50`)
-      console.log('Fetch response:', res)
-
-      if (res.ok && res.data) {
-        setBatches(res.data.batches as unknown as GrainBatch[])
-        console.log('Batches loaded:', res.data.batches.length)
-      } else {
-        console.error('Fetch error:', res.error)
-        toast.error(`Failed to fetch grain batches: ${res.error || 'Unknown error'}`)
-      }
-
-
+      setLoading(true)
+      const { data, error } = await supabase
+        .from('grain_batches')
+        .select('*, silo:silos(name, silo_id, capacity_kg), buyer:buyers(name, contact_info)')
+        .order('created_at', { ascending: false });
+        
+      if (error) throw error;
+      
+      const mappedBatches = (data || []).map(b => ({
+        _id: b.id,
+        batch_id: b.batch_id || b.id,
+        grain_type: b.grain_type,
+        quantity_kg: b.quantity_kg,
+        status: b.status,
+        risk_score: b.risk_score || 0,
+        spoilage_label: b.spoilage_label || 'Safe',
+        intake_date: b.intake_date || b.created_at,
+        silo_id: b.silo ? { _id: b.silo_id, name: b.silo.name, silo_id: b.silo.silo_id, capacity_kg: b.silo.capacity_kg } : { _id: '', name: 'Unassigned', silo_id: '', capacity_kg: 0 },
+        farmer_name: b.farmer_name,
+        farmer_contact: b.farmer_contact,
+        variety: b.variety,
+        grade: b.grade,
+        harvest_date: b.harvest_date,
+        notes: b.notes,
+        source_location: b.source_location,
+        purchase_price_per_kg: b.purchase_price_per_kg,
+        dispatched_quantity_kg: b.dispatched_quantity_kg || 0
+      }));
+      setBatches(mappedBatches as unknown as GrainBatch[]);
     } catch (error) {
       console.error('Error fetching batches:', error)
-      toast.error(`Failed to fetch grain batches: ${(error as Error).message || 'Network error'}`)
+      toast.error('Failed to fetch grain batches')
+    } finally {
+      setLoading(false)
     }
   }
 
   const fetchSilos = async () => {
     try {
-      const res = await api.get<{ silos: Silo[] }>(`/api/silos`)
-      if (res.ok && res.data) {
-        setSilos(res.data.silos as unknown as Silo[])
-      }
+      const { data, error } = await supabase.from('silos').select('id, name, silo_id, capacity_kg, current_occupancy_kg');
+      if (error) throw error;
+      const mappedSilos = (data || []).map(s => ({ _id: s.id, name: s.name, silo_id: s.silo_id || s.id, capacity_kg: s.capacity_kg, current_occupancy_kg: s.current_occupancy_kg || 0 }));
+      setSilos(mappedSilos);
     } catch (error) {
       console.error('Error fetching silos:', error)
     }
@@ -208,22 +227,14 @@ export default function GrainBatchesPage() {
   // Generate batch ID when grain type is selected
   const generateBatchId = async (grainType: string) => {
     try {
-      type BatchIdResponse = { batch_id: string; sequence: number; grain_type: string; year: number }
-      const res = await api.get<BatchIdResponse>(`/api/grain-batches/generate-id/${grainType}`)
-      if (res.ok && res.data?.batch_id) {
-        setFormData(prev => ({ ...prev, batch_id: res.data!.batch_id }))
-      } else {
-        toast.error('Failed to generate batch ID')
-      }
+      const prefix = grainType.substring(0, 3).toUpperCase();
+      const randomSeq = Math.floor(1000 + Math.random() * 9000);
+      const batchId = `${prefix}-${new Date().getFullYear()}-${randomSeq}`;
+      
+      setFormData(prev => ({ ...prev, batch_id: batchId }))
 
-      // Fetch available silos for this grain type
-      const silosRes = await api.get<{ silos: Silo[] }>(`/api/grain-batches/available-silos/${grainType}`)
-      if (silosRes.ok && silosRes.data?.silos) {
-        setAvailableSilos(silosRes.data.silos as unknown as Silo[])
-      } else {
-        // Fallback to all silos if endpoint fails
-        setAvailableSilos(silos)
-      }
+      // Fetch available silos for this grain type (stub logic: just use all silos)
+      setAvailableSilos(silos)
     } catch (error) {
       console.error('Error generating batch ID:', error)
       toast.error('Failed to generate batch ID')
@@ -233,7 +244,6 @@ export default function GrainBatchesPage() {
   // CRUD Operations
   const handleAddBatch = async () => {
     try {
-      // Get logged-in user's information from token
       let userName = 'Unknown User';
       try {
         const token = localStorage.getItem('token');
@@ -245,77 +255,57 @@ export default function GrainBatchesPage() {
         console.error('Error decoding token:', error);
       }
 
-      // Convert numeric fields to numbers and add user information
       const dataToSend = {
-        ...formData,
+        batch_id: formData.batch_id,
+        grain_type: formData.grain_type,
         quantity_kg: Number(formData.quantity_kg),
-        farmer_name: userName, // Use logged-in user's name instead of manual input
-        farmer_contact: '', // Leave contact empty or could be obtained from user profile
-      }
-      console.log('Creating batch with data:', dataToSend)
-
-      // Check if user is authenticated
-      const token = localStorage.getItem('token')
-      console.log('Token from localStorage:', token ? 'Token exists' : 'No token found')
-
-      if (!token) {
-        toast.error('Please log in to create grain batches')
-        return
+        silo_id: formData.silo_id || null,
+        farmer_name: userName,
+        farmer_contact: '',
+        variety: formData.variety,
+        grade: formData.grade,
+        harvest_date: formData.harvest_date ? new Date(formData.harvest_date).toISOString() : null,
+        notes: formData.notes,
+        source_location: formData.source_location,
+        purchase_price_per_kg: formData.purchase_price_per_kg ? Number(formData.purchase_price_per_kg) : null,
       }
 
-      // Log the full request details
-      console.log('Making API request to:', `${config.backendUrl}/grain-batches`)
-      console.log('Request headers:', {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      })
+      const { error } = await supabase.from('grain_batches').insert(dataToSend);
 
-      const res = await api.post('/api/grain-batches', dataToSend)
-      console.log('Full API Response:', res)
-      console.log('Response status:', res.status)
-      console.log('Response data:', res.data)
-      console.log('Response error:', res.error)
-
-      if (res.ok) {
+      if (!error) {
         toast.success('Grain batch created successfully')
         setIsAddDialogOpen(false)
         resetForm()
         await fetchBatches()
       } else {
-        console.error('API Error Details:', {
-          status: res.status,
-          error: res.error,
-          response: res
-        })
-        toast.error(`Failed to create grain batch: ${res.error || 'Unknown error'}`)
+        console.error('API Error Details:', { error })
+        toast.error(`Failed to create grain batch: ${error.message || 'Unknown error'}`)
       }
     } catch (error) {
       console.error('Network/Request Error:', error)
-      console.error('Error details:', {
-        message: (error as Error).message,
-        stack: (error as Error).stack,
-        name: (error as Error).name
-      })
-      toast.error(`Failed to create grain batch: ${(error as Error).message || 'Network error'}`)
+      toast.error(`Failed to create grain batch`)
     }
   }
 
   const handleEditBatch = async () => {
     if (!selectedBatch) return
     try {
-      // Convert numeric fields to numbers
       const dataToSend = {
-        ...formData,
-        quantity_kg: Number(formData.quantity_kg)
+        grain_type: formData.grain_type,
+        quantity_kg: Number(formData.quantity_kg),
+        silo_id: formData.silo_id || null,
+        variety: formData.variety,
+        grade: formData.grade,
       }
-      const res = await api.put(`/api/grain-batches/${selectedBatch._id}`, dataToSend)
-      if (res.ok) {
+      const { error } = await supabase.from('grain_batches').update(dataToSend).eq('id', selectedBatch._id)
+      
+      if (!error) {
         toast.success('Grain batch updated successfully')
         setIsEditDialogOpen(false)
         resetForm()
         await fetchBatches()
       } else {
-        toast.error('Failed to update grain batch')
+        throw error;
       }
     } catch (error) {
       console.error('Error updating batch:', error)
@@ -326,13 +316,13 @@ export default function GrainBatchesPage() {
   const handleDeleteBatch = async () => {
     if (!selectedBatch) return
     try {
-      const res = await api.delete(`/api/grain-batches/${selectedBatch._id}`)
-      if (res.ok) {
+      const { error } = await supabase.from('grain_batches').delete().eq('id', selectedBatch._id)
+      if (!error) {
         toast.success('Grain batch deleted successfully')
         setIsDeleteDialogOpen(false)
         await fetchBatches()
       } else {
-        toast.error('Failed to delete grain batch')
+        throw error;
       }
     } catch (error) {
       console.error('Error deleting batch:', error)
@@ -355,7 +345,6 @@ export default function GrainBatchesPage() {
   const handleDispatchBatch = async () => {
     if (!selectedBatch) return
     try {
-      // Module 8: Use new dispatch endpoint with buyer_id and sell_price_per_kg
       if (!dispatchData.buyer_id && !dispatchData.buyer_name) {
         toast.error('Please select a buyer or enter buyer details')
         return
@@ -365,121 +354,71 @@ export default function GrainBatchesPage() {
         return
       }
 
-      const dataToSend: any = {
-        buyer_id: dispatchData.buyer_id || undefined,
-        sell_price_per_kg: Number(dispatchData.sell_price_per_kg),
-        dispatched_quantity_kg: dispatchData.quantity_dispatched ? Number(dispatchData.quantity_dispatched) : undefined,
-        dispatch_details: {
-          vehicle_number: dispatchData.vehicle_number || undefined,
-          driver_name: dispatchData.driver_name || undefined,
-          driver_contact: dispatchData.driver_contact || undefined,
-          destination: dispatchData.destination || undefined
-        }
+      const supabaseClient = supabase;
+      let buyerId = dispatchData.buyer_id;
+
+      // If buyer is new, create them first
+      if (!buyerId && dispatchData.buyer_name) {
+        const { data: newBuyer, error: bErr } = await supabaseClient
+          .from('buyers')
+          .insert({
+            name: dispatchData.buyer_name,
+            email: dispatchData.buyer_email,
+            contact_info: dispatchData.buyer_contact
+          })
+          .select()
+          .single();
+        
+        if (bErr) throw bErr;
+        buyerId = newBuyer.id;
       }
 
-      // If no buyer_id, use dispatch-simple endpoint
-      let res
-      if (!dispatchData.buyer_id) {
-        res = await api.post(`/api/grain-batches/${selectedBatch._id}/dispatch-simple`, {
-          buyer_name: dispatchData.buyer_name,
-          buyer_email: dispatchData.buyer_email,
-          buyer_contact: dispatchData.buyer_contact,
-          quantity_dispatched: dispatchData.quantity_dispatched,
-          sell_price_per_kg: dispatchData.sell_price_per_kg,
-          dispatch_date: dispatchData.dispatch_date,
-          notes: dispatchData.notes
+      const q = Number(dispatchData.quantity_dispatched);
+      const { error: dErr } = await supabaseClient
+        .from('grain_batches')
+        .update({
+          status: 'dispatched',
+          buyer_id: buyerId,
+          price_per_kg: Number(dispatchData.sell_price_per_kg),
+          dispatched_quantity_kg: q,
+          updated_at: new Date().toISOString()
         })
-      } else {
-        res = await api.post(`/api/grain-batches/${selectedBatch._id}/dispatch`, dataToSend)
-      }
-      if (res.ok) {
-        toast.success('Grain batch dispatched successfully')
-        setIsDispatchDialogOpen(false)
-        // Trigger buyers page refresh if it's open (via window event)
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('buyers-refresh'))
-        }
-        setDispatchData({
-          buyer_id: '',
-          buyer_name: '',
-          buyer_email: '',
-          buyer_contact: '',
-          quantity_dispatched: '',
-          dispatch_date: '',
-          sell_price_per_kg: '',
-          vehicle_number: '',
-          driver_name: '',
-          driver_contact: '',
-          destination: '',
-          notes: ''
-        })
-        await fetchBatches()
-      } else {
-        toast.error('Failed to dispatch grain batch')
-      }
-    } catch (error) {
+        .eq('id', selectedBatch._id);
+
+      if (dErr) throw dErr;
+
+      toast.success('Grain batch dispatched successfully')
+      setIsDispatchDialogOpen(false)
+      await fetchBatches()
+    } catch (error: any) {
       console.error('Error dispatching batch:', error)
-      toast.error('Failed to dispatch grain batch')
+      toast.error(`Failed to dispatch: ${error.message}`)
     }
   }
 
   const handleLogSpoilage = async () => {
     if (!selectedBatch) return
     try {
-      const res = await api.post(`/api/logging/batches/${selectedBatch._id}/spoilage-events`, {
-        ...spoilageData,
-        estimated_loss_kg: spoilageData.estimated_loss_kg ? Number(spoilageData.estimated_loss_kg) : 0,
-        environmental_conditions: {
-          temperature: spoilageData.temperature ? Number(spoilageData.temperature) : undefined,
-          humidity: spoilageData.humidity ? Number(spoilageData.humidity) : undefined
-        }
-      })
+      const { error } = await supabase
+        .from('grain_alerts')
+        .insert({
+          batch_id: selectedBatch._id,
+          silo_id: selectedBatch.silo_id?._id,
+          type: spoilageData.type,
+          priority: spoilageData.severity === 'high' ? 'critical' : spoilageData.severity,
+          title: `Spoilage reported: ${spoilageData.type}`,
+          description: spoilageData.description,
+          status: 'active'
+        });
 
-      if (res.ok && res.data) {
-        toast.success('Spoilage event logged successfully')
-        const eventId = (res.data as any).event.event_id
+      if (error) throw error;
 
-        // Upload photos if any
-        if (spoilagePhotos.length > 0) {
-          setIsUploadingPhoto(true)
-          for (const photo of spoilagePhotos) {
-            const formData = new FormData()
-            formData.append('photos', photo)
-
-            const token = localStorage.getItem('token')
-            const uploadRes = await fetch(`${config.backendUrl}/api/logging/batches/${selectedBatch._id}/spoilage-events/${eventId}/photos`, {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${token}`
-              },
-              body: formData
-            })
-
-            if (!uploadRes.ok) {
-              toast.error('Failed to upload some photos')
-            }
-          }
-          setIsUploadingPhoto(false)
-        }
-
-        setIsSpoilageDialogOpen(false)
-        setSpoilageData({
-          type: 'pests',
-          severity: 'low',
-          description: '',
-          estimated_loss_kg: '',
-          temperature: '',
-          humidity: '',
-          action_taken: ''
-        })
-        setSpoilagePhotos([])
-        await fetchBatches()
-      } else {
-        toast.error('Failed to log spoilage event')
-      }
-    } catch (error) {
+      toast.success('Spoilage event logged successfully')
+      setIsSpoilageDialogOpen(false)
+      await fetchBatches()
+    } catch (error: any) {
       console.error('Error logging spoilage:', error)
-      toast.error('Failed to log spoilage event')
+      toast.error(`Failed to log: ${error.message}`)
     }
   }
 

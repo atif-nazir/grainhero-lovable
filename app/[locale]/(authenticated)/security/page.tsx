@@ -24,7 +24,8 @@ import {
   Trash2,
   RefreshCw
 } from 'lucide-react'
-//import { api } from '@/lib/api'
+import { supabase } from '@/lib/supabase'
+import { toast } from 'sonner'
 
 interface SecurityLog {
   _id: string
@@ -63,92 +64,79 @@ export default function SecurityPage() {
 
   const loadSecurityData = async () => {
     try {
-      // Mock data for now - replace with actual API calls
-      setTimeout(() => {
-        setSecurityLogs([
-          {
-            _id: '1',
-            event_type: 'Login',
-            description: 'Successful login from Lahore, Pakistan',
-            ip_address: '192.168.1.100',
-            user_agent: 'Chrome 120.0.0.0',
-            location: 'Lahore, Pakistan',
-            timestamp: '2024-01-25T10:30:00Z',
-            severity: 'low'
-          },
-          {
-            _id: '2',
-            event_type: 'Failed Login',
-            description: 'Failed login attempt from unknown location',
-            ip_address: '203.124.45.67',
-            user_agent: 'Firefox 121.0.0.0',
-            location: 'Unknown',
-            timestamp: '2024-01-25T09:15:00Z',
-            severity: 'medium'
-          },
-          {
-            _id: '3',
-            event_type: 'Password Change',
-            description: 'Password changed successfully',
-            ip_address: '192.168.1.100',
-            user_agent: 'Chrome 120.0.0.0',
-            location: 'Lahore, Pakistan',
-            timestamp: '2024-01-24T15:45:00Z',
-            severity: 'low'
-          }
-        ])
+      setLoading(true)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
 
+      // In Supabase, session management for current user is handled via auth.getSession()
+      // Listing all sessions usually requires admin privileges, so we'll show current one
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (session) {
         setActiveSessions([
           {
-            _id: '1',
-            device: 'Desktop',
-            browser: 'Chrome 120.0.0.0',
-            location: 'Lahore, Pakistan',
-            ip_address: '192.168.1.100',
-            last_activity: '2024-01-25T10:30:00Z',
+            _id: session.access_token.slice(-10),
+            device: navigator.userAgent.includes('Mobi') ? 'Mobile' : 'Desktop',
+            browser: navigator.userAgent,
+            location: 'Unknown',
+            ip_address: 'Current Device',
+            last_activity: new Date().toISOString(),
             current: true
-          },
-          {
-            _id: '2',
-            device: 'Mobile',
-            browser: 'Safari 17.2.0',
-            location: 'Karachi, Pakistan',
-            ip_address: '192.168.1.101',
-            last_activity: '2024-01-25T08:15:00Z',
-            current: false
           }
         ])
+      }
 
-        setLoading(false)
-      }, 1000)
+      // Fetch security related alerts for logs
+      const { data: alerts } = await supabase
+        .from('grain_alerts')
+        .select('*')
+        .eq('alert_type', 'security')
+        .order('created_at', { ascending: false })
+        .limit(10)
+
+      if (alerts) {
+        setSecurityLogs(alerts.map((a: any) => ({
+          _id: a.id,
+          event_type: a.metadata?.event_type || 'Security Event',
+          description: a.message,
+          ip_address: a.metadata?.ip || 'N/A',
+          user_agent: a.metadata?.user_agent || 'N/A',
+          location: a.metadata?.location || 'N/A',
+          timestamp: a.created_at,
+          severity: a.severity as any
+        })))
+      }
     } catch (error) {
       console.error('Failed to load security data:', error)
+      toast.error('Failed to load security data')
+    } finally {
       setLoading(false)
     }
   }
 
   const handlePasswordChange = async () => {
     if (newPassword !== confirmPassword) {
-      alert('New passwords do not match')
+      toast.error('New passwords do not match')
       return
     }
 
     if (newPassword.length < 6) {
-      alert('Password must be at least 6 characters long')
+      toast.error('Password must be at least 6 characters long')
       return
     }
 
     setChangingPassword(true)
     try {
-      // Mock password change - replace with actual API call
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      const { error } = await supabase.auth.updateUser({ password: newPassword })
+      if (error) throw error
+      
       setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')
-      alert('Password changed successfully')
-    } catch (error) {
+      toast.success('Password changed successfully')
+    } catch (error: any) {
       console.error('Failed to change password:', error)
-      alert('Failed to change password')
+      toast.error(error.message || 'Failed to change password')
     } finally {
       setChangingPassword(false)
     }
@@ -156,13 +144,10 @@ export default function SecurityPage() {
 
   const handleTerminateSession = async (sessionId: string) => {
     if (!confirm('Are you sure you want to terminate this session?')) return
-    
-    try {
-      // Mock session termination - replace with actual API call
-      setActiveSessions(prev => prev.filter(session => session._id !== sessionId))
-    } catch (error) {
-      console.error('Failed to terminate session:', error)
-    }
+    toast.info('Session termination is handled by signing out in Supabase.')
+    // In a real app with auth admin, you could terminate other sessions.
+    // For now, we'll just mock the UI change.
+    setActiveSessions(prev => prev.filter(session => session._id !== sessionId))
   }
 
   const getSeverityBadge = (severity: string) => {

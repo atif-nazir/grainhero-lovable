@@ -21,7 +21,7 @@ import {
   Thermometer,
   Droplets
 } from "lucide-react"
-import { api } from "@/lib/api"
+import { supabase } from "@/lib/supabase"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AnimatedBackground } from "@/components/animations/MotionGraphics"
 import { config } from "@/config"
@@ -88,13 +88,55 @@ export default function AnalyticsPage() {
     const load = async () => {
       setLoading(true)
       setError(null)
-      const res = await api.get<DashboardApi>("/dashboard")
-      if (res.ok && res.data) {
-        setDashboard(res.data)
-      } else {
-        setError(res.error || "Failed to load analytics")
+      try {
+        const { data: silos } = await supabase.from('silos').select('*');
+        const { data: batches } = await supabase.from('grain_batches').select('*');
+        const { data: buyers } = await supabase.from('buyers').select('*');
+
+        if (silos && batches) {
+          const totalCap = silos.reduce((s: number, x: any) => s + x.capacity_kg, 0);
+          const totalOcc = silos.reduce((s: number, x: any) => s + (x.current_occupancy_kg || 0), 0);
+          
+          const grainCounts: Record<string, number> = {};
+          batches.forEach((b: any) => {
+             grainCounts[b.grain_type] = (grainCounts[b.grain_type] || 0) + 1;
+          });
+
+          setDashboard({
+            capacityStats: {
+              totalCapacity: totalCap,
+              totalCurrentQuantity: totalOcc,
+              utilizationPercentage: totalCap ? Math.round((totalOcc / totalCap) * 100) : 0
+            },
+            analytics: {
+              monthlyIntake: [],
+              grainDistribution: Object.entries(grainCounts).map(([grain, count]) => ({
+                grain,
+                percentage: batches.length ? Math.round((count / batches.length) * 100) : 0,
+                quantity: count
+              })),
+              qualityMetrics: [
+                { quality: 'Safe', value: batches.filter((b: any) => (b.risk_score || 0) < 30).length },
+                { quality: 'Risky', value: batches.filter((b: any) => (b.risk_score || 0) >= 30 && (b.risk_score || 0) < 70).length },
+                { quality: 'Spoiled', value: batches.filter((b: any) => (b.risk_score || 0) >= 70).length }
+              ]
+            },
+            business: {
+              activeBuyers: buyers?.length || 0,
+              avgPricePerKg: batches.filter((b: any) => b.price_per_kg).length 
+                             ? (batches.filter((b: any) => b.price_per_kg).reduce((s: number, x: any) => s + (x.price_per_kg || 0), 0) / (batches.filter((b: any) => b.price_per_kg).length || 1))
+                             : 0,
+              dispatchRate: batches.length ? Math.round((batches.filter((b: any) => b.status === 'dispatched').length / batches.length) * 100) : 0,
+              qualityScore: 4.5
+            },
+            storageDistribution: []
+          });
+        }
+      } catch (err) {
+        setError("Failed to load analytics")
+      } finally {
+        setLoading(false)
       }
-      setLoading(false)
     }
     void load()
   }, [])
@@ -215,9 +257,24 @@ export default function AnalyticsPage() {
               size="sm"
               onClick={async () => {
                 setLoading(true)
-                const res = await api.get<DashboardApi>("/dashboard")
-                if (res.ok && res.data) {
-                  setDashboard(res.data)
+                try {
+                  const { data: silos } = await supabase.from('silos').select('*');
+                  const { data: batches } = await supabase.from('grain_batches').select('*');
+                  const { data: buyers } = await supabase.from('buyers').select('*');
+                  if (silos && batches) {
+                    const totalCap = silos.reduce((s: number, x: any) => s + x.capacity_kg, 0);
+                    const totalOcc = silos.reduce((s: number, x: any) => s + (x.current_occupancy_kg || 0), 0);
+                    const grainCounts: Record<string, number> = {};
+                    batches.forEach((b: any) => { grainCounts[b.grain_type] = (grainCounts[b.grain_type] || 0) + 1; });
+                    setDashboard({
+                      capacityStats: { totalCapacity: totalCap, totalCurrentQuantity: totalOcc, utilizationPercentage: totalCap ? Math.round((totalOcc / totalCap) * 100) : 0 },
+                      analytics: { monthlyIntake: [], grainDistribution: Object.entries(grainCounts).map(([grain, count]) => ({ grain, percentage: batches.length ? Math.round((count / batches.length) * 100) : 0, quantity: count })), qualityMetrics: [{ quality: 'Safe', value: batches.filter((b: any) => (b.risk_score || 0) < 30).length }, { quality: 'Risky', value: batches.filter((b: any) => (b.risk_score || 0) >= 30 && (b.risk_score || 0) < 70).length }, { quality: 'Spoiled', value: batches.filter((b: any) => (b.risk_score || 0) >= 70).length }] },
+                      business: { activeBuyers: buyers?.length || 0, avgPricePerKg: batches.filter((b: any) => b.price_per_kg).length ? (batches.filter((b: any) => b.price_per_kg).reduce((s: number, x: any) => s + (x.price_per_kg || 0), 0) / (batches.filter((b: any) => b.price_per_kg).length || 1)) : 0, dispatchRate: batches.length ? Math.round((batches.filter((b: any) => b.status === 'dispatched').length / batches.length) * 100) : 0, qualityScore: 4.5 },
+                      storageDistribution: []
+                    });
+                  }
+                } catch (err) {
+                  toast.error("Refresh failed");
                 }
                 setLoading(false)
               }}

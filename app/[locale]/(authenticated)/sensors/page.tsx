@@ -14,8 +14,7 @@ import { useEnvironmentalHistory } from '@/lib/useEnvironmentalData'
 import { toast } from 'sonner'
 import { useLanguage } from '@/app/[locale]/providers'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import type { Socket } from 'socket.io-client'
-let ioClient: typeof import('socket.io-client').io | null = null
+import { supabase } from '@/lib/supabase'
 
 interface SensorDevice {
   _id: string
@@ -71,8 +70,7 @@ export default function SensorsPage() {
     lidState: string
   }>>([])
   const [siloId, setSiloId] = useState<string>('')
-  const backendUrl = (typeof window !== 'undefined' ? (window as typeof window & Record<string, unknown>).__BACKEND_URL : undefined) || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'
-  const socketRef = useRef<Socket | null>(null)
+  const socketRef = useRef<any>(null)
   const [realtimeConnected, setRealtimeConnected] = useState(false)
   const [showDiagnostics, setShowDiagnostics] = useState(false)
   const [diagnostics, setDiagnostics] = useState<Array<{ error: string; solution: string }>>([])
@@ -90,35 +88,25 @@ export default function SensorsPage() {
     let mounted = true
       ; (async () => {
         try {
-          const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
-          const res = await fetch(`${backendUrl}/api/sensors?limit=100`, { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } })
+          setLoading(true)
+          const { data, error } = await supabase
+            .from('sensor_devices')
+            .select('*, silo:silos(name, silo_id)')
+            .order('last_seen', { ascending: false })
+            
           if (!mounted) return
-          if (res.ok) {
-            const data = await res.json()
-            interface RawSensorData {
-              _id?: string;
-              device_id?: string;
-              device_name?: string;
-              status?: string;
-              health_status?: string;
-              sensor_types?: string[];
-              battery_level?: number;
-              signal_strength?: number;
-              device_metrics?: { battery_level?: number; signal_strength?: number; };
-              silo_id?: { name?: string; _id?: string; };
-              health_metrics?: { uptime_percentage?: number; error_count?: number; last_heartbeat?: string; };
-            }
-            const mapped: SensorDevice[] = (data.sensors || []).map((s: RawSensorData) => ({
-              _id: s._id || '',
-              device_id: s.device_id || s._id || '',
+          if (!error && data) {
+            const mapped: SensorDevice[] = data.map((s: any) => ({
+              _id: s.id || '',
+              device_id: s.device_id || s.id || '',
               device_name: s.device_name || 'Unnamed Device',
-              status: s.health_status === 'healthy' ? 'active' : (s.health_status || s.status || 'active'),
+              status: s.status || 'active',
               sensor_types: s.sensor_types || [],
-              battery_level: s.battery_level || s.device_metrics?.battery_level || 100,
-              signal_strength: s.signal_strength || s.device_metrics?.signal_strength || -50,
-              silo_id: s.silo_id ? { name: s.silo_id.name || 'Silo', silo_id: s.silo_id._id || '' } : { name: '-', silo_id: '' },
-              last_reading: s.health_metrics?.last_heartbeat || new Date().toISOString(),
-              health_metrics: s.health_metrics || { uptime_percentage: 99, error_count: 0, last_heartbeat: new Date().toISOString() }
+              battery_level: s.battery_level || 100,
+              signal_strength: s.signal_strength || -50,
+              silo_id: s.silo ? { name: s.silo.name || 'Silo', silo_id: s.silo.silo_id || '' } : { name: '-', silo_id: '' },
+              last_reading: s.last_seen || new Date().toISOString(),
+              health_metrics: { uptime_percentage: 99, error_count: 0, last_heartbeat: s.last_seen || new Date().toISOString() }
             }))
             setSensors(mapped)
             if (!siloId && mapped.length > 0) {
@@ -138,77 +126,106 @@ export default function SensorsPage() {
     return () => { mounted = false }
   }, [])
 
-  // Realtime: Socket.IO subscription
+
+  // Realtime: Supabase subscription
   useEffect(() => {
     let active = true
       ; (async () => {
         try {
           if (!siloId) return
-          if (!ioClient) {
-            const mod = await import('socket.io-client')
-            ioClient = mod.io
-          }
-          const socket = ioClient!(backendUrl as string, { transports: ['websocket', 'polling'], path: '/socket.io' })
-          socketRef.current = socket
-          socket.on('connect', () => {
-            if (!active) return
-            setRealtimeConnected(true)
-          })
-          socket.on('connect_error', () => {
-            if (!active) return
-            setRealtimeConnected(false)
-          })
-          socket.on('sensor_reading', (msg: { type: string, data: Record<string, unknown>, timestamp: string | number }) => {
-            if (!active) return
-            try {
-              const d = msg?.data as Record<string, unknown>
-              const deviceId = (typeof d?.device_id === 'string' ? d.device_id : '') || ''
-              if (!deviceId) return
-              const temperature = ((d?.['temperature'] as { value?: number } | undefined)?.value) ?? 0
-              const humidity = ((d?.['humidity'] as { value?: number } | undefined)?.value) ?? 0
-              const tvocRaw = ((d?.['voc'] as { value?: number } | undefined)?.value) ?? 0
-              const fanState = ((d?.['pwm_speed'] as number | undefined) && Number(d?.['pwm_speed']) > 0) ? 'on' : 'off'
-              const lidState = d?.['servo_state'] ? 'open' : 'closed'
-              const alarmState = d?.['alarm_state'] === 'on' ? 'on' : 'off'
-              const mlDecision = (humidity > 75 || tvocRaw > 600) ? 'fan_on' : 'idle'
-              const ts = Number(d?.['timestamp'] as number | string | undefined) || Date.now()
-              setTelemetry(prev => ({
-                ...(prev || {} as TelemetryData),
-                temperature: Number(temperature),
-                humidity: Number(humidity),
-                tvoc: Number(tvocRaw),
-                fanState, lidState, alarmState, mlDecision,
-                humanOverride: false,
-                guardrails: [],
-                timestamp: ts
-              }))
-            } catch { /* ignore parse errors */ }
-          })
+          setRealtimeConnected(true)
+          
+          // Subscribe to new readings
+          const channel = supabase
+            .channel(`sensor-${siloId}`)
+            .on(
+              'postgres_changes',
+              {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'sensor_readings',
+                filter: `silo_id=eq.${siloId}`,
+              },
+              (payload) => {
+                if (!active) return;
+                try {
+                  const d = payload.new as any;
+                  const temperature = d?.temperature ?? 0
+                  const humidity = d?.humidity ?? 0
+                  const tvocRaw = d?.co2 ?? 0
+                  const fanState = ((d?.pwm_speed || 0) > 0) ? 'on' : 'off'
+                  const lidState = d?.servo_state ? 'open' : 'closed'
+                  const alarmState = d?.alarm_state === 'on' ? 'on' : 'off'
+                  const mlDecision = (humidity > 75 || tvocRaw > 600) ? 'fan_on' : 'idle'
+                  const ts = new Date(d.timestamp).getTime() || Date.now()
+                  setTelemetry(prev => ({
+                    ...(prev || {} as TelemetryData),
+                    temperature: Number(temperature),
+                    humidity: Number(humidity),
+                    tvoc: Number(tvocRaw),
+                    fanState, lidState, alarmState, mlDecision,
+                    humanOverride: false,
+                    guardrails: [],
+                    timestamp: ts
+                  }))
+                } catch { /* ignore parse errors */ }
+              }
+            )
+            .subscribe((status) => {
+              if (status === 'SUBSCRIBED') setRealtimeConnected(true);
+              else setRealtimeConnected(false);
+            });
+            
+          socketRef.current = channel as any;
         } catch {
           setRealtimeConnected(false)
         }
       })()
     return () => {
       active = false
-      try { socketRef.current?.disconnect() } catch { }
-      socketRef.current = null
+      if (socketRef.current) {
+        supabase.removeChannel(socketRef.current as any)
+      }
     }
-  }, [siloId, backendUrl])
+  }, [siloId])
 
-  // Poll telemetry from PUBLIC endpoint (no auth required)
+  // Poll telemetry from Supabase
   useEffect(() => {
     let mounted = true
     const fetchTelemetry = async () => {
       if (!siloId) return
       try {
-        // Use the public endpoint — no auth token needed
-        const res = await fetch(`${backendUrl}/api/iot/silos/${siloId}/telemetry-public`)
+        const { data, error } = await supabase
+          .from('sensor_readings')
+          .select('*')
+          .eq('silo_id', siloId)
+          .order('timestamp', { ascending: false })
+          .limit(1)
+          .single()
+          
         if (!mounted) return
-        if (res.ok) {
-          const data = await res.json()
-          setTelemetry(data)
+        if (!error && data) {
+          const telemetryData: TelemetryData = {
+            temperature: data.temperature || 0,
+            humidity: data.humidity || 0,
+            tvoc: data.co2 || 0,
+            fanState: data.pwm_speed > 0 ? 'on' : 'off',
+            lidState: data.servo_state ? 'open' : 'closed',
+            alarmState: data.alarm_state === 'on' ? 'on' : 'off',
+            mlDecision: 'idle',
+            humanOverride: false,
+            guardrails: [],
+            pressure: null,
+            light: null,
+            dewPoint: null,
+            soilMoisture: null,
+            pestRiskScore: null,
+            riskIndex: null,
+            timestamp: new Date(data.timestamp).getTime()
+          };
+          setTelemetry(telemetryData)
           setTelemetryHistory(prev => {
-            const next = [...prev, { timestamp: data.timestamp, mlDecision: data.mlDecision, fanState: data.fanState, lidState: data.lidState }]
+            const next = [...prev, { timestamp: telemetryData.timestamp, mlDecision: telemetryData.mlDecision, fanState: telemetryData.fanState, lidState: telemetryData.lidState }]
             return next.slice(-20)
           })
         }
@@ -217,7 +234,7 @@ export default function SensorsPage() {
     fetchTelemetry()
     const i = setInterval(fetchTelemetry, 3000)
     return () => { mounted = false; clearInterval(i) }
-  }, [siloId, backendUrl])
+  }, [siloId])
 
   const getStatusBadge = (status: string) => {
     const statusConfig = {

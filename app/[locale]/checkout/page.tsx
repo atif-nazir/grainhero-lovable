@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Check, CreditCard, Shield, Clock, Users, Zap, Globe, Cpu, ArrowLeft, ChevronDown, ChevronUp } from "lucide-react"
-import pricingData from '../pricing-data.js'
+import pricingData from '../pricing-data'
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 export default function CheckoutPage() {
@@ -17,6 +17,7 @@ export default function CheckoutPage() {
     const [userEmail, setUserEmail] = useState<string>('')
     const [isProcessing, setIsProcessing] = useState(false)
     const [errorMessage, setErrorMessage] = useState<string | null>(null)
+    const [iotQuantity, setIotQuantity] = useState<number>(1)
     const router = useRouter()
 
     useEffect(() => {
@@ -72,9 +73,11 @@ export default function CheckoutPage() {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    priceId: plan.priceId, // Included for reference, but backend uses planId
+                    priceId: plan.priceId,
                     userEmail: userEmail,
-                    planId: selectedPlan
+                    planId: selectedPlan,
+                    iotPriceId: plan.iotPriceId,
+                    iotQuantity: plan.iotPriceId !== 'custom' ? iotQuantity : 0
                 })
             })
 
@@ -317,13 +320,44 @@ export default function CheckoutPage() {
                                                 <span>Monthly Plan Price</span>
                                                 <span>Rs. {selectedPlanData.price?.toLocaleString()}</span>
                                             </div>
-                                            {selectedPlanData.iotCharge && (
-                                                <div className="flex justify-between text-sm">
-                                                    <span className="flex items-center gap-1">
-                                                        <Cpu className="w-3 h-3 text-amber-600" />
-                                                        One-time IoT Setup
-                                                    </span>
-                                                    <span>Rs. {selectedPlanData.iotCharge?.toLocaleString()}</span>
+                                            {selectedPlanData.iotCharge > 0 && (
+                                                <div className="space-y-3 bg-amber-50/50 p-3 rounded-lg border border-amber-100">
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="flex items-center gap-1 font-medium text-amber-800">
+                                                            <Cpu className="w-4 h-4 text-amber-600" />
+                                                            IoT Units
+                                                        </span>
+                                                        <div className="flex items-center gap-2">
+                                                            <Button
+                                                                variant="outline"
+                                                                size="icon"
+                                                                className="h-7 w-7 rounded-md"
+                                                                onClick={() => setIotQuantity(Math.max(1, iotQuantity - 1))}
+                                                            >
+                                                                -
+                                                            </Button>
+                                                            <span className="w-6 text-center text-sm font-bold">{iotQuantity}</span>
+                                                            <Button
+                                                                variant="outline"
+                                                                size="icon"
+                                                                className="h-7 w-7 rounded-md"
+                                                                onClick={() => setIotQuantity(iotQuantity + 1)}
+                                                            >
+                                                                +
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex justify-between text-xs text-amber-700">
+                                                        <span>Cost per unit</span>
+                                                        <span>Rs. {selectedPlanData.iotCharge.toLocaleString()}</span>
+                                                    </div>
+                                                    <div className="flex justify-between text-sm font-semibold text-amber-900 border-t border-amber-200 pt-2 mt-1">
+                                                        <span>Hardware Subtotal</span>
+                                                        <span>Rs. {(selectedPlanData.iotCharge * iotQuantity).toLocaleString()}</span>
+                                                    </div>
+                                                    <p className="text-[10px] text-amber-600 italic">
+                                                        Note: hardware cost is a one-time charge today. Only the subscription renews.
+                                                    </p>
                                                 </div>
                                             )}
                                             <div className="flex justify-between text-sm">
@@ -331,9 +365,9 @@ export default function CheckoutPage() {
                                                 <span>{selectedPlanData.interval}</span>
                                             </div>
                                             <Separator />
-                                            <div className="flex justify-between font-semibold text-lg">
-                                                <span>Monthly Total</span>
-                                                <span>Rs. {selectedPlanData.price?.toLocaleString()}</span>
+                                            <div className="flex justify-between font-semibold text-lg text-[#00a63e]">
+                                                <span>Total to pay today</span>
+                                                <span>Rs. {(selectedPlanData.priceMonthly + (selectedPlanData.iotPriceId !== 'custom' ? (selectedPlanData.iotCharge * iotQuantity) : 0)).toLocaleString()}</span>
                                             </div>
 
                                         </div>

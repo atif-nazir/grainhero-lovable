@@ -8,6 +8,7 @@ import { useTranslations } from 'next-intl';
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { AnimatedBackground } from "@/components/animations/MotionGraphics";
+import { supabase } from '@/lib/supabase';
 
 // User type
 interface User {
@@ -120,130 +121,100 @@ export default function AlertsPage() {
   // Fetch alerts from REST API
   useEffect(() => {
     if (!role || !userId) return;
-    const token = localStorage.getItem("token");
-    if (!token || token === "") {
-      setError("Authentication token missing. Please log in again.");
-      setLoading(false);
-      return;
-    }
     setLoading(true);
     setError(null);
-    let url = "";
-    if (role === "super_admin") {
-      url = "http://localhost:5000/alerts/all";
-    } else if (role === "admin") {
-      url = `http://localhost:5000/alerts/by-admin/${userId}`;
-    } else if (role === "manager") {
-      url = `http://localhost:5000/alerts/by-manager/${userId}`;
-    } else if (role === "assistant") {
-      url = `http://localhost:5000/alerts/by-assistant/${userId}`;
-    } else {
-      url = "http://localhost:5000/alerts";
-    }
-    fetch(url, {
-      headers: { "Authorization": `Bearer ${token}` },
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || "Failed to fetch alerts");
-        }
-        return res.json();
-      })
-      .then((data) => {
-        setAlerts(Array.isArray(data) ? data : []);
-      })
-      .catch((err) => {
-        setError(err.message);
-      })
-      .finally(() => setLoading(false));
-  }, [role, userId, editingId, deleteLoadingId]);
-
-  // WebSocket for real-time alerts (admin, manager, assistant only)
-  useEffect(() => {
-    if (!role || !userId) return;
-    if (role === "super_admin") return; // No websocket for super_admin
-    let wsUrl = "";
-    if (role === "admin") wsUrl = `ws://localhost:5000/alerts/admin/${userId}`;
-    else if (role === "manager") wsUrl = `ws://localhost:5000/alerts/manager/${userId}`;
-    else if (role === "assistant") wsUrl = `ws://localhost:5000/alerts/assistant/${userId}`;
-    else return;
-    console.log("WebSocket route:", wsUrl);
-    const socket = new WebSocket(wsUrl);
-    socket.onmessage = (event) => {
+    
+    const fetchAlerts = async () => {
       try {
-        const data = JSON.parse(event.data);
-        setAlerts(Array.isArray(data) ? data : []);
-      } catch {
-        // ignore parse errors
+        const { data, error: sbError } = await supabase
+          .from('grain_alerts')
+          .select('*, silo:silos(name)')
+          .order('created_at', { ascending: false });
+          
+        if (sbError) throw sbError;
+        
+        const mappedAlerts: Alert[] = (data || []).map((a: any) => ({
+          _id: a.id,
+          title: a.title || a.alert_type || 'Alert',
+          category: a.category || "sensor",
+          location: a.silo ? a.silo.name : "System",
+          description: a.message || a.description || "No description",
+          createdAt: a.created_at,
+          status: a.status || "active",
+        }));
+        
+        setAlerts(mappedAlerts);
+      } catch (err: any) {
+        setError(err.message || 'Failed to fetch alerts');
+      } finally {
+        setLoading(false);
       }
     };
-    // Optionally handle errors and close
-    socket.onerror = (e) => console.error("WebSocket error:", e);
-    socket.onclose = () => console.log("WebSocket closed");
-    // Clean up on unmount or role/userId change
+    
+    fetchAlerts();
+  }, [role, userId, editingId, deleteLoadingId]);
+
+  // WebSocket for real-time alerts
+  useEffect(() => {
+    if (!role || !userId) return;
+    
+    const channel = supabase.channel('realtime_alerts')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'grain_alerts' },
+        (payload) => {
+          const a = payload.new as any;
+          const newAlert: Alert = {
+             _id: a.id,
+             title: a.title || a.alert_type || 'Alert',
+             category: a.category || "sensor",
+             location: "System",
+             description: a.message || a.description || "No description",
+             createdAt: a.created_at,
+             status: a.status || "active",
+          };
+          setAlerts(prev => [newAlert, ...prev]);
+        }
+      ).subscribe();
+      
     return () => {
-      socket.close();
+      supabase.removeChannel(channel);
     };
   }, [role, userId]);
 
   
 
   // Edit alert handler
-  const handleEdit = (id: string, data: Omit<Alert, '_id' | 'createdAt' | 'status'>) => {
+  const handleEdit = async (id: string, data: Omit<Alert, '_id' | 'createdAt' | 'status'>) => {
     setEditLoading(true);
     setError(null);
-    const token = localStorage.getItem("token");
-    fetch(`http://localhost:5000/alerts/${id}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`,
-      },
-      body: JSON.stringify(data),
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || "Failed to update alert");
-        }
-        return res.json();
-      })
-      .then(() => {
-        setEditingId(null);
-        setEditLoading(false);
-      })
-      .catch((err) => {
-        setError(err.message);
-        setEditLoading(false);
-      });
+    try {
+      const updateData = {
+        title: data.title,
+        category: data.category,
+        description: data.description,
+      };
+      const { error: sbError } = await supabase.from('grain_alerts').update(updateData).eq('id', id);
+      if (sbError) throw sbError;
+      
+      setEditingId(null);
+    } catch (err: any) {
+      setError(err.message || "Failed to update alert");
+    } finally {
+      setEditLoading(false);
+    }
   };
 
   // Delete alert handler
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     setDeleteLoadingId(id);
     setError(null);
-    const token = localStorage.getItem("token");
-    fetch(`http://localhost:5000/alerts/${id}`, {
-      method: "DELETE",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-      },
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || "Failed to delete alert");
-        }
-        return res.json();
-      })
-      .then(() => {
-        setDeleteLoadingId(null);
-      })
-      .catch((err) => {
-        setError(err.message);
-        setDeleteLoadingId(null);
-      });
+    try {
+      const { error: sbError } = await supabase.from('grain_alerts').delete().eq('id', id);
+      if (sbError) throw sbError;
+    } catch (err: any) {
+      setError(err.message || "Failed to delete alert");
+    } finally {
+      setDeleteLoadingId(null);
+    }
   };
 
   if (loading) {

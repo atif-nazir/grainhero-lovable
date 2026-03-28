@@ -19,8 +19,9 @@ import {
   CheckCircle,
   Clock
 } from 'lucide-react'
-import { api } from '@/lib/api'
+import { supabase } from '@/lib/supabase'
 import { AnimatedBackground } from "@/components/animations/MotionGraphics"
+import { toast } from 'sonner'
 
 interface TenantSettings {
   name: string
@@ -94,54 +95,19 @@ export default function SettingsPage() {
   const loadSettings = async () => {
     try {
       setLoading(true)
-      // Fetch current user data from auth/profile
-      const userResponse = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || '/api'}/auth/profile`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-      
-      let user = null;
-      if (userResponse.ok) {
-        user = await userResponse.json();
-      }
-
+      const { data: { user } } = await supabase.auth.getUser()
       if (user) {
-        // Define type for tenant settings response
-        interface TenantSettingsResponse {
-          business_type?: string;
-          location?: {
-            address?: string;
-            city?: string;
-            country?: string;
-          };
-          notifications?: {
-            email_alerts: boolean;
-            sms_alerts: boolean;
-            push_notifications: boolean;
-            weekly_reports: boolean;
-            monthly_reports: boolean;
-          };
-          system?: {
-            auto_backup: boolean;
-            data_retention_days: number;
-            session_timeout_minutes: number;
-            two_factor_auth: boolean;
-          };
-          integrations?: {
-            weather_api: boolean;
-            market_prices: boolean;
-            government_data: boolean;
-          };
-        }
-        
-        const tenantRes = await api.get('/api/tenant/settings').catch(() => null)
-        const tenantData: TenantSettingsResponse | null = tenantRes?.data || null;
-        
+        const { data: tenantData } = await supabase
+          .from('tenant_settings')
+          .select('*')
+          .single()
+
+        const profileData = user.user_metadata
+
         const loadedSettings = {
-          name: user.name || '',
+          name: profileData?.full_name || '',
           email: user.email || '',
-          phone: user.phone || '',
+          phone: profileData?.phone || '',
           business_type: tenantData?.business_type || 'farm',
           location: {
             address: tenantData?.location?.address || '',
@@ -169,41 +135,11 @@ export default function SettingsPage() {
         };
         
         setSettings(loadedSettings);
-        // Set the initial 2FA state
         setInitialTwoFactorState(loadedSettings.system.two_factor_auth);
-      } else {
-        // Fallback to default settings if API fails
-        const defaultSettings = {
-          name: '',
-          email: '',
-          phone: '',
-          business_type: 'farm',
-          location: { address: '', city: '', country: 'Pakistan' },
-          notifications: {
-            email_alerts: true,
-            sms_alerts: false,
-            push_notifications: true,
-            weekly_reports: true,
-            monthly_reports: true
-          },
-          system: {
-            auto_backup: true,
-            data_retention_days: 365,
-            session_timeout_minutes: 60,
-            two_factor_auth: false
-          },
-          integrations: {
-            weather_api: true,
-            market_prices: true,
-            government_data: false
-          }
-        };
-        
-        setSettings(defaultSettings);
-        setInitialTwoFactorState(defaultSettings.system.two_factor_auth);
       }
     } catch (error) {
       console.error('Failed to load settings:', error)
+      toast.error('Failed to load settings')
     } finally {
       setLoading(false)
     }
@@ -212,76 +148,35 @@ export default function SettingsPage() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      // Handle 2FA toggle separately if changed
-      if (settings.system.two_factor_auth !== initialTwoFactorState) {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || '/api'}/auth/toggle-2fa`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          },
-        });
-        
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Failed to update 2FA settings');
+      // 1. Update User Profile in Supabase Auth
+      const { error: authError } = await supabase.auth.updateUser({
+        data: { 
+          full_name: settings.name,
+          phone: settings.phone
         }
-      }
-
-      // Save user profile data (only name and phone are allowed on the profile endpoint)
-      let profileRes;
-      try {
-        const profileResponse = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || '/api'}/auth/profile`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          },
-          body: JSON.stringify({
-            name: settings.name,
-            phone: settings.phone
-          })
-        });
-        
-        profileRes = { 
-          ok: profileResponse.ok, 
-          data: profileResponse.ok ? await profileResponse.json() : null 
-        };
-      } catch (error) {
-        console.error('Profile update failed:', error);
-        profileRes = { ok: false, data: null };
-      }
-
-      // Save tenant settings if available (excluding two_factor_auth since it's handled separately)
-      const { two_factor_auth, ...systemWithout2FA } = settings.system;
-      await api.put('/api/tenant/settings', {
-        notifications: settings.notifications,
-        system: systemWithout2FA,
-        integrations: settings.integrations,
-        location: settings.location
-      }).catch(() => {
-        // If tenant settings endpoint doesn't exist, that's okay
-        console.log('Tenant settings endpoint not available')
       })
+      if (authError) throw authError
 
-      // Check if profile update was successful
-      if (profileRes && profileRes.ok) {
-        setSaveStatus('success')
-        setTimeout(() => setSaveStatus('idle'), 3000)
-      } else {
-        // If profile update failed, but 2FA was toggled successfully, we can still consider it a success
-        // or at least show a partial success message
-        if (settings.system.two_factor_auth !== initialTwoFactorState) {
-          // 2FA was toggled, so it's a partial success
-          setSaveStatus('success')
-          setTimeout(() => setSaveStatus('idle'), 3000)
-        } else {
-          throw new Error('Failed to save profile settings')
-        }
-      }
+      // 2. Update Tenant Settings in Supabase Database
+      const { two_factor_auth, ...systemWithout2FA } = settings.system;
+      const { error: dbError } = await supabase
+        .from('tenant_settings')
+        .upsert({
+          notifications: settings.notifications,
+          system: systemWithout2FA,
+          integrations: settings.integrations,
+          location: settings.location,
+          business_type: settings.business_type
+        })
+      if (dbError) throw dbError
+
+      setSaveStatus('success')
+      toast.success('Settings saved successfully')
+      setTimeout(() => setSaveStatus('idle'), 3000)
     } catch (error) {
       console.error('Failed to save settings:', error)
       setSaveStatus('error')
+      toast.error('Failed to save settings')
       setTimeout(() => setSaveStatus('idle'), 3000)
     } finally {
       setSaving(false)

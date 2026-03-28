@@ -2,6 +2,7 @@
 
 import { useAuth } from "@/app/[locale]/providers"
 import { useState, useEffect } from 'react'
+import { supabase } from "@/lib/supabase"
 import { SuperAdminDashboard } from "@/components/dashboards/SuperAdminDashboard"
 import { TenantDashboard } from "@/components/dashboards/TenantDashboard"
 import { ManagerDashboard } from "@/components/dashboards/ManagerDashboard"
@@ -158,17 +159,50 @@ export default function DashboardPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'
-        const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
-        // Dashboard Overview
-        const res = await fetch(`${backendUrl}/dashboard`, { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } })
-        if (res.ok) {
-          const data = await res.json()
-          setDashboard(data)
-        } else {
-          setError('Failed to load dashboard stats')
+        const { data: silos } = await supabase.from('silos').select('*');
+        const { data: batches } = await supabase.from('grain_batches').select('*');
+        const { data: alerts } = await supabase.from('grain_alerts').select('*').limit(5);
+
+        if (silos && batches) {
+           const totalCap = silos.reduce((s: number, x: any) => s + x.capacity_kg, 0);
+           const totalOcc = silos.reduce((s: number, x: any) => s + (x.current_occupancy_kg || 0), 0);
+           
+           setDashboard({
+             stats: [
+               { title: "Grain Batches", value: batches.length },
+               { title: "Total Silos", value: silos.length },
+               { title: "Active Alerts", value: alerts?.length || 0 }
+             ],
+             storageDistribution: [],
+             grainTypeDistribution: [],
+             capacityStats: {
+               totalCapacity: totalCap,
+               totalCurrentQuantity: totalOcc,
+               utilizationPercentage: totalCap ? Math.round((totalOcc / totalCap) * 100) : 0
+             },
+             suggestions: { criticalStorage: [], optimization: [] },
+             recentBatches: batches.slice(0, 5).map((b: any) => ({
+               id: b.id,
+               grain: b.grain_type,
+               quantity: b.quantity_kg,
+               status: b.status,
+               silo: "Storage Unit",
+               date: b.created_at,
+               risk: (b.risk_score || 0) > 70 ? 'High' : 'Low'
+             })),
+             alerts: alerts?.map((a: any) => ({
+               id: a.id,
+               type: a.title,
+               message: a.description,
+               severity: a.priority,
+               time: a.created_at
+             })) || [],
+             analytics: { monthlyIntake: [], grainDistribution: [], qualityMetrics: [] },
+             sensors: [],
+             business: { activeBuyers: 0, avgPricePerKg: 0, dispatchRate: 0, qualityScore: 5 }
+           });
         }
-      } catch {
+      } catch (err) {
         setError('Server Error')
       } finally {
         setLoading(false)

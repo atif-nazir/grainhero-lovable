@@ -2,10 +2,10 @@
 
 import type React from "react"
 
-import { createContext, useContext, useState, useEffect } from "react"
+import { createContext, useContext, useState, useEffect, useCallback } from "react"
 import { languages, type LanguageCode, type TranslationKey } from "@/lib/languages"
-//import { usePathname } from "next/navigation"
-import { config } from "@/config"
+import { createClient } from "@/lib/supabase/client"
+import { type Session } from "@supabase/supabase-js"
 
 export interface User {
   id: string
@@ -14,17 +14,16 @@ export interface User {
   role: "super_admin" | "admin" | "manager" | "technician"
   language: LanguageCode
   phone?: string
-  avatarUrl?: string // Add avatarUrl as optional for extensibility
-  hasAccess?: string // Add hasAccess as optional for extensibility
+  avatarUrl?: string
+  hasAccess?: string
 }
 
 interface AuthContextType {
   user: User | null
-  login: (email: string, password: string) => Promise<void>
-  logout: () => void
+  session: Session | null
+  logout: () => Promise<void>
   updateLanguage: (language: LanguageCode) => void
   isLoading: boolean
-  refreshUser: () => Promise<void>
 }
 
 interface LanguageContextType {
@@ -168,123 +167,89 @@ function PlanProvider({ children }: { children: React.ReactNode }) {
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
+  const [session, setSession] = useState<Session | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const supabase = createClient()
+
+  const fetchUserProfile = useCallback(async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single()
+
+      if (error || !data) {
+        console.error('Error fetching user profile:', error)
+        return null
+      }
+
+      return {
+        id: data.id,
+        name: data.full_name || '',
+        email: data.email || '',
+        role: data.role || 'technician',
+        language: (data.language as LanguageCode) || 'en',
+        phone: data.phone || '',
+        avatarUrl: data.avatar_url || '',
+      } as User
+    } catch (err) {
+      console.error('Unexpected error fetching profile:', err)
+      return null
+    }
+  }, [supabase])
 
   useEffect(() => {
-    // Check for existing session
-    const savedUser = localStorage.getItem("farm-home-user")
-    const savedAccess = localStorage.getItem("farm-home-access")
-    const parsedUser = savedUser ? JSON.parse(savedUser) : null;
-    if (parsedUser && savedAccess) {
-      parsedUser.hasAccess = decryptAccess(savedAccess);
-    }
-    setUser(parsedUser)
-    setIsLoading(false)
-
-    // Listen for user updates from other components (e.g., PlansPage)
-    const handleUserUpdate = (e: Event) => {
-      if ('detail' in e && e.detail) {
-        setUser(e.detail as User);
+    const initializeAuth = async () => {
+      try {
+        const { data: { session: initialSession } } = await supabase.auth.getSession()
+        setSession(initialSession)
+        
+        if (initialSession?.user) {
+          const profile = await fetchUserProfile(initialSession.user.id)
+          setUser(profile)
+        }
+      } catch (err) {
+        console.error('Error initializing auth:', err)
+      } finally {
+        setIsLoading(false)
       }
-    };
-    window.addEventListener('farm-home-user-updated', handleUserUpdate as EventListener);
+    }
+
+    initializeAuth()
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
+      setSession(currentSession)
+      
+      if (currentSession?.user) {
+        const profile = await fetchUserProfile(currentSession.user.id)
+        setUser(profile)
+      } else {
+        setUser(null)
+      }
+      
+      setIsLoading(false)
+    })
+
     return () => {
-      window.removeEventListener('farm-home-user-updated', handleUserUpdate as EventListener);
-    };
-  }, [])
-
-  const refreshUser = async () => {
-    setIsLoading(true);
-    try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-      const res = await fetch(`${config.backendUrl}/auth/me`, {
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          'Content-Type': 'application/json',
-        },
-      });
-      console.log(1)
-      if (!res.ok) throw new Error('Failed to fetch user info');
-      const data = await res.json();
-      if (data.hasAccess) {
-        localStorage.setItem('farm-home-access', encryptAccess(data.hasAccess));
-      }
-      console.log(2)
-      const userObj = {
-        id: data.id,
-        name: data.name,
-        email: data.email,
-        role: data.role,
-        language: data.language || 'en',
-        phone: data.phone,
-        avatarUrl: data.avatar,
-        hasAccess: data.hasAccess || 'none',
-      };
-      setUser(userObj);
-      console.log(3)
-      localStorage.setItem('farm-home-user', JSON.stringify(userObj));
-    } catch {
-      // Optionally handle error
+      subscription.unsubscribe()
     }
-    console.log(4)
-    setIsLoading(false);
-  };
+  }, [supabase, fetchUserProfile])
 
-  const login = async (email: string, password: string) => {
-    setIsLoading(true)
-    try {
-      const res = await fetch(`${config.backendUrl}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      })
-      if (!res.ok) throw new Error("Login failed")
-      const data = await res.json()
-      // Persist JWT for authenticated API calls
-      if (data.token) {
-        localStorage.setItem("token", data.token)
-      }
-      // Save encrypted hasAccess
-      if (data.hasAccess) {
-        localStorage.setItem("farm-home-access", encryptAccess(data.hasAccess))
-      }
-      // Save user info
-      const userObj = {
-        id: data.id,
-        name: data.name,
-        email: data.email,
-        role: data.role,
-        language: data.language || "en",
-        phone: data.phone,
-        avatarUrl: data.avatar,
-        hasAccess: data.hasAccess || "none",
-      }
-      setUser(userObj)
-      localStorage.setItem("farm-home-user", JSON.stringify(userObj))
-    } catch {
-      setUser(null)
-      localStorage.removeItem("token")
-    }
-    setIsLoading(false)
-  }
-
-  const logout = () => {
+  const logout = async () => {
+    await supabase.auth.signOut()
     setUser(null)
-    localStorage.removeItem("farm-home-user")
-    localStorage.removeItem("farm-home-access")
-    localStorage.removeItem("token")
+    setSession(null)
   }
 
   const updateLanguage = (language: LanguageCode) => {
     if (user) {
-      const updatedUser = { ...user, language }
-      setUser(updatedUser)
-      localStorage.setItem("farm-home-user", JSON.stringify(updatedUser))
+      setUser({ ...user, language })
     }
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, updateLanguage, isLoading, refreshUser }}>
+    <AuthContext.Provider value={{ user, session, logout, updateLanguage, isLoading }}>
       <LanguageProvider initialLanguage={user?.language || "en"}>
         <PlanProvider>{children}</PlanProvider>
       </LanguageProvider>

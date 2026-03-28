@@ -20,6 +20,7 @@ import {
   type PasswordStrength
 } from "@/lib/validation";
 import { PasswordStrengthIndicator } from "@/components/PasswordStrengthIndicator";
+import { createClient } from "@/lib/supabase/client"
 
 export default function SignUpPage() {
   const t = useTranslations('AuthPage');
@@ -95,21 +96,30 @@ export default function SignUpPage() {
 
   const verifyInvitation = async (token: string) => {
     try {
-      const res = await fetch(`${config.backendUrl}/auth/verify-invitation?token=${token}`);
-      const data = await res.json();
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('profiles') // Assuming invitations or profiles table for validation
+        .select('*')
+        .eq('invitation_token', token)
+        .single()
 
-      if (res.ok && data.valid) {
-        setInvitationData(data);
-        // Pre-fill form with invitation data
+      if (!error && data) {
+        setInvitationData({
+          valid: true,
+          email: data.email,
+          role: data.role,
+          name: data.full_name
+        });
         setFormData(prev => ({
           ...prev,
           email: data.email,
-          name: data.name || ''
+          name: data.full_name || ''
         }));
       } else {
-        setMessage(data.error || 'Invalid invitation token');
+        setMessage('Invalid or expired invitation token');
       }
-    } catch {
+    } catch (err) {
+      console.error('Invitation verification error:', err)
       setMessage('Failed to verify invitation token');
     }
   };
@@ -142,108 +152,74 @@ export default function SignUpPage() {
     }
 
     try {
-      // Check if this is an invited user
-      if (invitationData) {
-        // Invited users can signup directly (no payment needed)
-        const signupData: {
-          name: string;
-          email: string;
-          phone?: string;
-          password: string;
-          confirm_password: string;
-          invitation_token?: string;
-        } = {
-          name: formData.name.trim(),
-          email: formData.email.trim().toLowerCase(),
-          phone: formData.phone.trim() || undefined,
-          password: formData.password,
-          confirm_password: formData.confirmPassword,
-          invitation_token: invitationToken || undefined,
-        };
+      const supabase = createClient()
+      
+      // 1. Initial Signup with Supabase
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: formData.email.trim().toLowerCase(),
+        password: formData.password,
+        options: {
+          data: {
+            full_name: formData.name.trim(),
+            phone: formData.phone.trim() || undefined,
+          },
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        }
+      })
 
-        const res = await fetch(`${config.backendUrl}/auth/signup`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(signupData),
+      if (authError) {
+        setMessage(authError.message)
+        setIsLoading(false)
+        return
+      }
+
+      if (!authData.user) {
+        setMessage("Signup failed. Please try again.")
+        setIsLoading(false)
+        return
+      }
+
+      // 2. Create/Update user profile in public.profiles table
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .upsert({
+          id: authData.user.id,
+          // email: formData.email.trim().toLowerCase(), // Profiles may not track email directly if it's in auth.users
+          full_name: formData.name.trim(),
+          phone: formData.phone.trim() || undefined,
+          role: invitationData?.role || 'admin', 
         })
 
-        if (!res.ok) {
-          const error = await res.json().catch(() => ({}))
-          setMessage(error?.message || "Signup failed. Please try again.")
+      if (profileError) {
+        console.error('Profile creation error:', profileError)
+        // Note: auth was successful, but profile failed. 
+        // We might want to handle this, but for now we'll proceed as auth is the main part.
+      }
+
+      // 3. Handle post-signup logic (payment verification or direct redirect)
+      if (invitationData) {
+        handlePostSignupRedirect(formData.email)
+      } else {
+        // If not an invited user, they likely need to pay
+        // We can check if they already have a payment record
+        const { data: subscription } = await supabase
+          .from('subscriptions')
+          .select('*')
+          .eq('tenant_id', authData.user.id) // Assuming user ID is tenant ID for now
+          .single()
+
+        if (!subscription || subscription.status !== 'active') {
+          setMessage("Account created! Now redirecting to checkout to choose your plan.")
+          setTimeout(() => {
+            router.push(`/checkout?email=${encodeURIComponent(formData.email)}`)
+          }, 2000)
         } else {
           handlePostSignupRedirect(formData.email)
         }
-      } else {
-        // First-time users need to verify payment first
-        const paymentVerification = await fetch(`${config.backendUrl}/api/payment-verification`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: formData.email.trim().toLowerCase() }),
-        })
-
-        if (!paymentVerification.ok) {
-          setMessage("Please complete payment first to create your account. You'll be redirected to checkout.")
-          setTimeout(() => {
-            localStorage.setItem('signupEmail', formData.email)
-            router.push(`/checkout?email=${encodeURIComponent(formData.email)}`)
-          }, 2000)
-          return
-        }
-
-        const paymentData = await paymentVerification.json()
-        console.log("Payment verification response:", paymentData)
-
-        if (!paymentData.hasPayment) {
-          setMessage("Please complete payment first to create your account. You'll be redirected to checkout.")
-          setTimeout(() => {
-            localStorage.setItem('signupEmail', formData.email)
-            router.push(`/checkout?email=${encodeURIComponent(formData.email)}`)
-          }, 2000)
-          return
-        }
-
-        // Check if user already exists as admin (completed signup)
-        if (paymentData.user && paymentData.user.role === 'admin') {
-          setMessage("Account already exists! Redirecting you to login.")
-          setTimeout(() => {
-            router.push(`/auth/login?prefill=${encodeURIComponent(formData.email)}`)
-          }, 1500)
-          return
-        }
-
-        // User has payment and is not yet an admin, proceed with signup
-        const signupData = {
-          name: formData.name.trim(),
-          email: formData.email.trim().toLowerCase(),
-          phone: formData.phone.trim() || undefined,
-          password: formData.password,
-          confirm_password: formData.confirmPassword,
-        };
-
-        const res = await fetch(`${config.backendUrl}/auth/signup`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(signupData),
-        })
-
-        const result = await res.json()
-        
-        if (!res.ok) {
-          setMessage(result?.message || result?.error || "Signup failed. Please try again.")
-        } else {
-          // Check if this is an existing user message
-          if (result?.message?.includes("already exists")) {
-            setMessage("Account already exists! Redirecting you to login.")
-            setTimeout(() => {
-              router.push(`/auth/login?prefill=${encodeURIComponent(formData.email)}`)
-            }, 1500)
-          } else {
-            handlePostSignupRedirect(formData.email)
-          }
-        }
       }
-    } catch {
-      setMessage("Network error. Please try again.")
+    } catch (err) {
+      console.error('Signup error:', err)
+      setMessage("An unexpected error occurred. Please try again.")
     }
     setIsLoading(false)
   }

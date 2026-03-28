@@ -24,8 +24,7 @@ import {
   CheckCircle,
   XCircle,
 } from 'lucide-react'
-import { api } from '@/lib/api'
-import { config } from '@/config'
+import { supabase } from '@/lib/supabase'
 import { AnimatedBackground } from "@/components/animations/MotionGraphics"
 import { toast } from 'sonner'
 
@@ -78,21 +77,57 @@ export default function ReportsPage() {
     else setLoading(true)
     setError(null)
     try {
-      const query = new URLSearchParams({ period: selectedPeriod })
-      const [reportsRes, dashRes] = await Promise.all([
-        api.get<ReportsOverview>(`/api/reports/overview?${query.toString()}`),
-        api.get<DashboardData>('/dashboard')
-      ])
-      if (reportsRes.ok && reportsRes.data) {
-        setOverview(reportsRes.data)
-      }
-      if (dashRes.ok && dashRes.data) {
-        setDashData(dashRes.data)
-      }
-      if (!reportsRes.ok && !dashRes.ok) {
-        setError('Unable to load reports data')
-      }
-    } catch {
+      const { data: silos } = await supabase.from('silos').select('*')
+      const { data: batches } = await supabase.from('grain_batches').select('*, buyers(name)')
+      const { data: alerts } = await supabase.from('grain_alerts').select('*')
+
+      const totalSilos = silos?.length || 0
+      const activeSilos = silos?.filter(s => s.status === 'active').length || 0
+      const totalBatches = batches?.length || 0
+      
+      const totalRevenue = batches?.reduce((sum, b) => sum + (b.sale_price_total || 0), 0) || 0
+      const activeBuyers = new Set(batches?.map(b => b.buyer_id).filter(Boolean)).size
+      const totalQuantity = batches?.reduce((sum, b) => sum + (b.quantity_kg || 0), 0) || 0
+      const avgPrice = totalQuantity > 0 ? totalRevenue / totalQuantity : 0
+
+      const qualityMetrics = [
+        { quality: 'Excellent', value: batches?.filter(b => b.quality_score >= 4.5).length || 0 },
+        { quality: 'Good', value: batches?.filter(b => b.quality_score >= 3.5 && b.quality_score < 4.5).length || 0 },
+        { quality: 'Fair', value: batches?.filter(b => b.quality_score >= 2.5 && b.quality_score < 3.5).length || 0 },
+        { quality: 'Risky', value: batches?.filter(b => b.quality_score < 2.5).length || 0 },
+        { quality: 'Spoiled', value: alerts?.filter(a => a.alert_type === 'spoilage').length || 0 }
+      ]
+
+      setOverview({
+        payments: {
+          total_subscriptions: 1, // Placeholder
+          total_revenue: totalRevenue,
+          active: 1,
+          cancelled: 0,
+          past_due: 0
+        },
+        ops: {
+          total_batches: totalBatches,
+          total_silos: totalSilos,
+          active_silos: activeSilos
+        }
+      })
+
+      setDashData({
+        business: {
+          monthlyRevenue: totalRevenue,
+          monthlyProfit: totalRevenue * 0.3, // Simple mock
+          avgPricePerKg: avgPrice,
+          dispatchRate: Math.round((batches?.filter(b => b.status === 'dispatched').length || 0) / (totalBatches || 1) * 100),
+          qualityScore: totalBatches > 0 ? Number((batches?.reduce((sum, b) => sum + (b.quality_score || 0), 0) / totalBatches).toFixed(1)) : 0,
+          activeBuyers: activeBuyers
+        },
+        analytics: {
+          qualityMetrics
+        }
+      })
+    } catch (err) {
+      console.error('Reports load error:', err)
       setError('Unable to load reports')
     } finally {
       setLoading(false)
@@ -115,28 +150,7 @@ export default function ReportsPage() {
   )
 
   const handleDownloadReport = async (type: string, format: 'pdf' | 'csv' = 'pdf') => {
-    try {
-      toast.info(`Generating ${type} report...`)
-      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
-      const reportType = type.toLowerCase().replace(/\s+/g, '-')
-      const res = await fetch(
-        `${config.backendUrl}/dashboard/export-report?type=${encodeURIComponent(reportType)}&format=${format}`,
-        {
-          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
-        }
-      )
-      if (!res.ok) throw new Error('Export failed')
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${reportType}-report.${format}`
-      a.click()
-      URL.revokeObjectURL(url)
-      toast.success(`${type} report downloaded`)
-    } catch {
-      toast.error('Failed to download report')
-    }
+    toast.info(`Report generation for ${type} is being migrated to Supabase Edge Functions.`)
   }
 
   const handleExportAll = async () => {

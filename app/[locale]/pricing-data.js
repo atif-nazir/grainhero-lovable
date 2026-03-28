@@ -13,8 +13,9 @@ const pricingData = [
       "AI Predictions",
     ],
     iotCharge: 7000,
-
-    priceId: "price_starter_1499", // Update with actual Stripe price ID
+    iotChargeLabel: "Rs. 7,000 Setup Fee",
+    priceMonthly: 1499,
+    priceId: "price_1TFqUZPNeDUmvgDD93NpAUBv", // Actual price ID
     price: 1499,
     currency: "PKR",
     duration: "/month",
@@ -44,8 +45,9 @@ const pricingData = [
       "AI Predictions",
     ],
     iotCharge: 7000,
-
-    priceId: "price_professional_3899", // Update with actual Stripe price ID
+    iotChargeLabel: "Rs. 7,000 Setup Fee",
+    priceMonthly: 3899,
+    priceId: "price_1TFqTkPNeDUmvgDDN6ccERyz", // Actual price ID
     price: 3899,
     currency: "PKR",
     duration: "/month",
@@ -75,8 +77,9 @@ const pricingData = [
       "AI Predictions",
     ],
     iotCharge: 7000,
-
-    priceId: "price_enterprise_5999", // Update with actual Stripe price ID
+    iotChargeLabel: "Rs. 7,000 Setup Fee",
+    priceMonthly: 5999,
+    priceId: "price_1TFqTDPNeDUmvgDDkvmDFuH2", // Actual price ID
     price: 5999,
     currency: "PKR",
     duration: "/month",

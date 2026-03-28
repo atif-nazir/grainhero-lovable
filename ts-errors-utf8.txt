@@ -1,0 +1,37 @@
+﻿app/[locale]/(authenticated)/super-admin/reports/page.tsx(35,31): error TS2304: Cannot find name 'api'.
+app/[locale]/(authenticated)/super-admin/reports/page.tsx(38,28): error TS2552: Cannot find name 'date'. Did you mean 'Date'?
+app/[locale]/(authenticated)/super-admin/reports/page.tsx(113,18): error TS2304: Cannot find name 'reportTypes'.
+app/[locale]/(authenticated)/super-admin/reports/page.tsx(113,35): error TS7006: Parameter 'report' implicitly has an 'any' type.
+app/[locale]/(authenticated)/super-admin/subscriptions/page.tsx(235,25): error TS2322: Type 'Subscription[]' is not assignable to type 'Record<string, unknown>[]'.
+  Type 'Subscription' is not assignable to type 'Record<string, unknown>'.
+    Index signature for type 'string' is missing in type 'Subscription'.
+app/[locale]/(authenticated)/super-admin/subscriptions/page.tsx(236,25): error TS2322: Type '{ key: string; label: string; render: (value: unknown, row: Subscription) => Element; }[]' is not assignable to type 'Column<Record<string, unknown>>[]'.
+  Type '{ key: string; label: string; render: (value: unknown, row: Subscription) => JSX.Element; }' is not assignable to type 'Column<Record<string, unknown>>'.
+    Types of property 'render' are incompatible.
+      Type '(value: unknown, row: Subscription) => JSX.Element' is not assignable to type '(value: unknown, row: Record<string, unknown>) => ReactNode'.
+        Types of parameters 'row' and 'row' are incompatible.
+          Type 'Record<string, unknown>' is missing the following properties from type 'Subscription': _id, plan_name, status, price_per_month, and 4 more.
+app/[locale]/(authenticated)/super-admin/tenants/page.tsx(276,25): error TS2322: Type 'Tenant[]' is not assignable to type 'Record<string, unknown>[]'.
+  Type 'Tenant' is not assignable to type 'Record<string, unknown>'.
+    Index signature for type 'string' is missing in type 'Tenant'.
+app/[locale]/(authenticated)/super-admin/tenants/page.tsx(277,25): error TS2322: Type '{ key: string; label: string; render: (value: unknown, row: Tenant) => Element; }[]' is not assignable to type 'Column<Record<string, unknown>>[]'.
+  Type '{ key: string; label: string; render: (value: unknown, row: Tenant) => JSX.Element; }' is not assignable to type 'Column<Record<string, unknown>>'.
+    Types of property 'render' are incompatible.
+      Type '(value: unknown, row: Tenant) => JSX.Element' is not assignable to type '(value: unknown, row: Record<string, unknown>) => ReactNode'.
+        Types of parameters 'row' and 'row' are incompatible.
+          Type 'Record<string, unknown>' is missing the following properties from type 'Tenant': _id, name, email, business_type, and 3 more.
+app/[locale]/(authenticated)/super-admin/users/page.tsx(245,25): error TS2322: Type 'User[]' is not assignable to type 'Record<string, unknown>[]'.
+  Type 'User' is not assignable to type 'Record<string, unknown>'.
+    Index signature for type 'string' is missing in type 'User'.
+app/[locale]/(authenticated)/super-admin/users/page.tsx(246,25): error TS2322: Type '{ key: string; label: string; render: (value: unknown, row: User) => Element; }[]' is not assignable to type 'Column<Record<string, unknown>>[]'.
+  Type '{ key: string; label: string; render: (value: unknown, row: User) => JSX.Element; }' is not assignable to type 'Column<Record<string, unknown>>'.
+    Types of property 'render' are incompatible.
+      Type '(value: unknown, row: User) => JSX.Element' is not assignable to type '(value: unknown, row: Record<string, unknown>) => ReactNode'.
+        Types of parameters 'row' and 'row' are incompatible.
+          Type 'Record<string, unknown>' is missing the following properties from type 'User': _id, name, email, role, and 2 more.
+app/api/webhooks/stripe/route.ts(6,3): error TS2322: Type '"2024-12-18.acacia"' is not assignable to type '"2025-02-24.acacia"'.
+components/dashboard/realtime-sensors.tsx(112,17): error TS2322: Type 'number | null' is not assignable to type 'string | number'.
+  Type 'null' is not assignable to type 'string | number'.
+lib/actions/auth.ts(211,28): error TS2339: Property 'get' does not exist on type 'Promise<ReadonlyHeaders>'.
+lib/actions/auth.ts(211,67): error TS2339: Property 'get' does not exist on type 'Promise<ReadonlyHeaders>'.
+lib/actions/auth.ts(212,32): error TS2339: Property 'get' does not exist on type 'Promise<ReadonlyHeaders>'.

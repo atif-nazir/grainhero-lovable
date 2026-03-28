@@ -31,12 +31,14 @@ export async function loginWithEmail(
 
       if (profileError || !userProfile) {
         // Create user profile if it doesn't exist
+        const nameFromMetadata = data.user.user_metadata?.full_name || ''
         await supabase
           .from('users')
           .insert({
             id: data.user.id,
             email: data.user.email,
-            full_name: data.user.user_metadata?.full_name || '',
+            full_name: nameFromMetadata,
+            role: 'admin', // Default to admin for new direct signups
           })
       }
     }
@@ -82,7 +84,7 @@ export async function signUpWithEmail(
           id: data.user.id,
           email: data.user.email,
           full_name: fullName,
-          role: 'buyer',
+          role: 'admin', // Default to admin for new signups (tenant owners)
         })
 
       if (profileError) {
@@ -202,12 +204,12 @@ export async function updatePassword(newPassword: string) {
   }
 }
 
-function getBaseUrl() {
+async function getBaseUrl() {
   if (typeof window !== 'undefined') {
     return window.location.origin
   }
 
-  const headersList = headers()
+  const headersList = await headers()
   const host = headersList.get('x-forwarded-host') || headersList.get('host')
   const protocol = headersList.get('x-forwarded-proto') || 'http'
 

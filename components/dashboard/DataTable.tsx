@@ -5,14 +5,14 @@ import { Button } from "@/components/ui/button"
 import { LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-interface Column<T extends Record<string, unknown> = Record<string, unknown>> {
+interface Column<T = any> {
   key: string
   label: string
-  render?: (value: unknown, row: T) => React.ReactNode
+  render?: (value: any, row: T) => React.ReactNode
   className?: string
 }
 
-interface DataTableProps<T extends Record<string, unknown> = Record<string, unknown>> {
+interface DataTableProps<T = any> {
   title: string
   description?: string
   data: T[]
@@ -28,7 +28,7 @@ interface DataTableProps<T extends Record<string, unknown> = Record<string, unkn
   className?: string
 }
 
-export function DataTable<T extends Record<string, unknown> = Record<string, unknown>>({ 
+export function DataTable<T = any>({ 
   title,
   description,
   data,
@@ -67,11 +67,11 @@ export function DataTable<T extends Record<string, unknown> = Record<string, unk
                 {columns.map((column) => (
                   <div key={column.key} className={cn("", column.className)}>
                     {column.render ? 
-                      column.render(row[column.key], row) : 
+                      column.render((row as any)[column.key], row) : 
                       <span>
-                        {typeof row[column.key] === 'object' && row[column.key] !== null
-                          ? JSON.stringify(row[column.key])
-                          : String(row[column.key] ?? '')
+                        {typeof (row as any)[column.key] === 'object' && (row as any)[column.key] !== null
+                          ? JSON.stringify((row as any)[column.key])
+                          : String((row as any)[column.key] ?? '')
                         }
                       </span>
                     }
