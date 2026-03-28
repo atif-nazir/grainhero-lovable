@@ -179,15 +179,15 @@ export default function SignUpPage() {
         return
       }
 
-      // 2. Create/Update user profile in public.users table
+      // 2. Create/Update user profile in public.profiles table
       const { error: profileError } = await supabase
-        .from('users')
+        .from('profiles')
         .upsert({
           id: authData.user.id,
-          email: formData.email.trim().toLowerCase(),
+          // email: formData.email.trim().toLowerCase(), // Profiles may not track email directly if it's in auth.users
           full_name: formData.name.trim(),
           phone: formData.phone.trim() || undefined,
-          role: invitationData?.role || 'admin', // Default to admin for first-time signups
+          role: invitationData?.role || 'admin', 
         })
 
       if (profileError) {

@@ -174,7 +174,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const fetchUserProfile = useCallback(async (userId: string) => {
     try {
       const { data, error } = await supabase
-        .from('users')
+        .from('profiles')
         .select('*')
         .eq('id', userId)
         .single()
