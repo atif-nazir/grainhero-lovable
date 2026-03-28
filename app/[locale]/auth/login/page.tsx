@@ -8,9 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { useAuth } from "@/app/[locale]/providers"
 import { WheatIcon as Sheep, Eye, EyeOff, AlertCircle, CheckCircle } from "lucide-react"
-import { config } from "@/config"
 import { useTranslations } from 'next-intl';
 import {
   validateLoginForm,
@@ -18,9 +16,13 @@ import {
   createFieldValidation
 } from "@/lib/validation";
 import { Link, useRouter } from "@/i18n/navigation"
+import { loginWithEmail } from "@/lib/actions/auth"
+import { useParams } from "next/navigation"
 
 export default function LoginPage() {
   const t = useTranslations('AuthPage');
+  const params = useParams()
+  const locale = params.locale as string
 
   // Form state
   const [email, setEmail] = useState("")
@@ -39,7 +41,6 @@ export default function LoginPage() {
 
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { login } = useAuth()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -70,52 +71,25 @@ export default function LoginPage() {
     }
 
     try {
-      const res = await fetch(`${config.backendUrl}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: normalizedEmail,
-          password
-        }),
-      })
-      if (!res.ok) {
-        const error = await res.json().catch(() => ({}))
-        setMessage(error?.message || "Login failed. Please check your credentials and try again.")
+      const result = await loginWithEmail(normalizedEmail, password, locale)
+      
+      if (result.error) {
+        setMessage(result.error)
       } else {
-        const data = await res.json()
-        
-        // Check if 2FA is required
-        if (data.requires2FA) {
-          // Store temporary token and user info for 2FA verification
-          localStorage.setItem("tempToken", data.tempToken)
-          localStorage.setItem("userId", data.userId)
-          localStorage.setItem("email", normalizedEmail)
-          
-          setMessage("Two-factor authentication required. Please check your email for the verification code.")
-          setTimeout(() => {
-            router.push("/auth/verify-2fa")
-          }, 1500)
-        } else {
-          // Normal login flow
-          localStorage.setItem("token", data.token)
-          localStorage.setItem("id", JSON.stringify(data.id))
-          localStorage.setItem("email", data.email)
-          localStorage.setItem("name", data.name)
-          localStorage.setItem("phone", data.phone)
-          localStorage.setItem("role", data.role)
-          localStorage.setItem("avatar", data.avatar)
-          console.log(data)
-          await login(normalizedEmail, password)
-          if (typeof window !== 'undefined') {
-            localStorage.removeItem('pendingSignupEmail')
-          }
-          setMessage("Login successful! Redirecting...")
-          setTimeout(() => router.push("/dashboard"), 1000)
+        setMessage("Login successful! Redirecting...")
+        // Clear any pending signup email
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('pendingSignupEmail')
         }
+        
+        const redirectTo = searchParams?.get('redirect_to') || '/dashboard'
+        setTimeout(() => {
+          router.push(redirectTo)
+        }, 1000)
       }
     } catch (err) {
       setMessage("Network error. Please check your connection and try again.")
-      console.log(err)
+      console.error(err)
     }
     setIsLoading(false)
   }
