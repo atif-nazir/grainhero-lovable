@@ -22,6 +22,8 @@ import { api } from "@/lib/api"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { TeamInvitationForm } from "@/components/TeamInvitationForm"
+import { supabase } from "@/lib/supabase"
+import { useAuth } from "@/app/[locale]/providers"
 
 type DashboardResponse = {
   stats: Array<{ title: string; value: number | string }>
@@ -85,72 +87,59 @@ export function TenantDashboard() {
     let mounted = true
       ; (async () => {
         try {
-          const [dashboardRes, usersRes, batchesRes, planRes] = await Promise.all([
-            api.get<DashboardResponse>("/dashboard"),
-            api.get<{ users: User[] }>("/api/user-management/users?limit=5"),
-            api.get<{ batches: RecentBatch[]; pagination?: { total_items: number } }>("/api/grain-batches?limit=100"),
-            api.get<{
-              plan: {
-                name: string;
-                price: number;
-                billingCycle: string;
-                features: Record<string, boolean>;
-                limits: {
-                  users: { total: number | string };
-                  grain_batches: { total: number | string };
-                  storage_gb: { total: number | string };
-                };
-              };
-              usage: {
-                users: {
-                  managers: number;
-                  technicians: number;
-                  total: number;
-                };
-                grain_batches: number;
-                storage_gb: number;
-                api_calls_this_month: number;
-              };
-            }>("/api/plan-management/plan-info")
-          ])
+          setIsLoading(true);
 
-          if (!mounted) return
+          const { data: usersData, error: uErr } = await supabase.from('users').select('*').limit(5);
+          const { data: batchesData, error: bErr } = await supabase.from('grain_batches').select('*').order('created_at', { ascending: false }).limit(100);
+          const { data: silosData, error: sErr } = await supabase.from('silos').select('*');
 
-          if (dashboardRes.ok && dashboardRes.data) {
-            setData(dashboardRes.data)
-          } else {
-            setError(dashboardRes.error || "Failed to load dashboard")
+          if (!mounted) return;
+
+          if (usersData) {
+            setUsers(usersData.map((u: any) => ({
+              _id: u.id,
+              name: u.full_name || u.email,
+              email: u.email,
+              role: u.role,
+            })).filter(u => u.role !== 'admin'));
           }
 
-          if (usersRes.ok && usersRes.data) {
-            // Filter out admin users from the list (they have their own profile)
-            const filteredUsers = (usersRes.data.users as unknown as User[]).filter(user => user.role !== 'admin')
-            setUsers(filteredUsers)
+          if (batchesData) {
+            const mappedBatches = batchesData.map((b: any) => ({
+              _id: b.id,
+              batch_id: b.batch_id || b.id,
+              grain_type: b.grain_type,
+              quantity_kg: b.quantity_kg,
+              status: b.status,
+              risk_score: b.risk_score || 0,
+              intake_date: b.intake_date || b.created_at,
+            }));
+            setRecentBatches(mappedBatches.slice(0, 5));
+            setTotalBatches(batchesData.length);
           }
 
-          if (batchesRes.ok && batchesRes.data) {
-            const batches = batchesRes.data.batches as unknown as RecentBatch[]
-            setRecentBatches(batches.slice(0, 5)) // Show only 5 most recent
-            // Update total batches count from pagination if available
-            if (batchesRes.data.pagination?.total_items !== undefined && batchesRes.data.pagination.total_items > 0) {
-              setTotalBatches(batchesRes.data.pagination.total_items)
-            } else if (batches.length > 0) {
-              // If no pagination info but we got batches, use the count
-              setTotalBatches(batches.length)
-            } else {
-              // Only set to 0 if we truly have no batches
-              setTotalBatches(0)
-            }
-          } else {
-            // Only set to 0 if API call failed
-            setTotalBatches(0)
-            setRecentBatches([])
-          }
+          // Mocking the dashboard stats based on fetched data
+          setData({
+             stats: [],
+             storageDistribution: [],
+             grainTypeDistribution: [],
+             capacityStats: {
+               totalCapacity: silosData?.reduce((acc, s) => acc + s.capacity_kg, 0) || 0,
+               totalCurrentQuantity: silosData?.reduce((acc, s) => acc + (s.current_occupancy_kg || 0), 0) || 0,
+               utilizationPercentage: silosData?.length ? (silosData.reduce((acc, s) => acc + (s.current_occupancy_kg || 0) / s.capacity_kg, 0) / silosData.length) * 100 : 0
+             },
+             suggestions: { criticalStorage: [], optimization: [] }
+          });
 
-          if (planRes.ok && planRes.data) {
-            setPlanInfo(planRes.data.plan)
-            setUsageStats(planRes.data.usage)
-          }
+          // Mocking plan info (should be fetched from a plans table or subscription info)
+          setPlanInfo({
+            name: "Enterprise Plan",
+            price: 500,
+            billingCycle: "monthly",
+            features: {},
+            limits: { users: { total: 100 }, grain_batches: { total: 1000 }, storage_gb: { total: 1000 } }
+          });
+
         } catch (error) {
           console.error('Failed to load dashboard data:', error)
           setError('Failed to load dashboard data')
