@@ -39,7 +39,7 @@ export async function POST(req: Request) {
       subscription_data: {
         trial_period_days: 30,
       },
-      success_url: `${origin}/en/dashboard?success=true&session_id={CHECKOUT_SESSION_ID}`,
+      success_url: `${origin}/en/auth/signup?payment=success&email=${encodeURIComponent(userEmail)}`,
       cancel_url: `${origin}/en/checkout?canceled=true`,
       metadata: {
         planId: planId,
