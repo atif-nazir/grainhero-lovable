@@ -6,7 +6,9 @@ export interface PricingPlan {
   features: string[];
   iotCharge: number;
   iotChargeLabel: string;
+  iotPriceId: string;
   priceMonthly: number;
+  trialDays: number;
   priceId: string;
   price: number;
   currency: string;
@@ -39,9 +41,11 @@ const pricingData: PricingPlan[] = [
       "AI Predictions",
     ],
     iotCharge: 7000,
-    iotChargeLabel: "Rs. 7,000 Setup Fee",
+    iotChargeLabel: "Rs. 7,000 per unit",
+    iotPriceId: "price_1TFpJOBMWljkQncgEKQXBiXg",
     priceMonthly: 1499,
-    priceId: "price_starter_1499",
+    trialDays: 30,
+    priceId: "price_1TFpFXBMWljkQncgLBphglO1",
     price: 1499,
     currency: "PKR",
     duration: "/month",
@@ -71,9 +75,11 @@ const pricingData: PricingPlan[] = [
       "AI Predictions",
     ],
     iotCharge: 7000,
-    iotChargeLabel: "Rs. 7,000 Setup Fee",
+    iotChargeLabel: "Rs. 7,000 per unit",
+    iotPriceId: "price_1TFpJOBMWljkQncgEKQXBiXg",
     priceMonthly: 3899,
-    priceId: "price_professional_3899",
+    trialDays: 30,
+    priceId: "price_1TFpHNBMWljkQncg9X7U89E5",
     price: 3899,
     currency: "PKR",
     duration: "/month",
@@ -103,9 +109,11 @@ const pricingData: PricingPlan[] = [
       "AI Predictions",
     ],
     iotCharge: 7000,
-    iotChargeLabel: "Rs. 7,000 Setup Fee",
+    iotChargeLabel: "Rs. 7,000 per unit",
+    iotPriceId: "price_1TFpJOBMWljkQncgEKQXBiXg",
     priceMonthly: 5999,
-    priceId: "price_enterprise_5999",
+    trialDays: 30,
+    priceId: "price_1TFpIaBMWljkQncgnluiQLrC",
     price: 5999,
     currency: "PKR",
     duration: "/month",
@@ -135,7 +143,9 @@ const pricingData: PricingPlan[] = [
     ],
     iotCharge: 0,
     iotChargeLabel: "Custom Setup",
+    iotPriceId: "custom",
     priceMonthly: 0,
+    trialDays: 0,
     priceId: "custom",
     price: 0,
     currency: "PKR",
